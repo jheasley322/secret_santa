@@ -1,0 +1,92 @@
+# ─── Secrets & credentials ────────────────────────────────────────────
+# Environment files (keep a committed .env.example with placeholder values)
+.env
+.env.*
+!.env.example
+*.env
+.envrc
+
+# Supabase local secrets / CLI state
+supabase/.env
+supabase/.env.*
+supabase/.temp/
+supabase/.branches/
+supabase/functions/.env
+supabase/functions/**/.env
+
+# Keys, certs, keystores
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+*.gpg
+*.asc
+
+# Generic secret/credential files
+secrets.*
+secret.*
+*.secret
+*.secrets
+credentials.json
+credentials.*
+service-account*.json
+*-service-account.json
+*.credentials
+.netrc
+.npmrc
+.pypirc
+auth.json
+token.json
+*.token
+
+# ─── Claude Code (local-only bits) ────────────────────────────────────
+.claude/settings.local.json
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
+# ─── Dependencies & build output ──────────────────────────────────────
+node_modules/
+dist/
+build/
+.cache/
+coverage/
+
+# ─── Test artifacts ───────────────────────────────────────────────────
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+playwright/.auth/
+
+# ─── Logs ─────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── Database dumps (may contain real user data) ──────────────────────
+*.sql.gz
+*.dump
+*.sqlite
+*.sqlite3
+*.db
+dump*.sql
+backup*.sql
+
+# ─── OS / editor ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*~
