@@ -1,0 +1,18 @@
+{
+  "name": "secret-santa",
+  "private": true,
+  "type": "module",
+  "description": "Dev tooling only. The shipped site has no npm runtime dependencies.",
+  "scripts": {
+    "test:sql": "node tests/tools/run-pgtap.mjs",
+    "test:unit": "vitest run",
+    "test:deno": "TZ=America/Los_Angeles deno test --no-prompt --allow-read=supabase/functions --deny-net --deny-env --deny-write --deny-run --deny-ffi --deny-sys supabase/functions/",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@supabase/supabase-js": "^2.118.0",
+    "pg": "^8.13.1",
+    "vitest": "^4.1.12"
+  }
+}

@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secret Santa - design preview</title>
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+
+<!-- (a) Elf dashboard, before the draw -->
+<section class="screen" aria-labelledby="a-label">
+  <p class="screen__label" id="a-label">(a) Elf: circle dashboard, before the draw</p>
+  <div class="app">
+    <header class="site-header">
+      <div class="snow" aria-hidden="true"></div>
+      <div class="site-header__inner">
+        <img class="brand-mark" src="../img/elf.svg" alt="">
+        <div>
+          <h1>Ava's Crew</h1>
+          <p class="site-header__sub">You are the Elf</p>
+        </div>
+      </div>
+      <div class="site-header__inner">
+        <div class="facts">
+          <span class="fact">$20</span><span class="fact">Fri Dec 19</span><span class="fact">Maya's house</span>
+        </div>
+      </div>
+    </header>
+    <main class="page stack">
+      <section class="card" aria-labelledby="a-prog">
+        <div class="card__title"><img src="../img/mitten.svg" alt=""><h2 id="a-prog">Wish lists</h2></div>
+        <div class="progress-line">
+          <span>4 of 5 done</span>
+          <span class="meter" role="img" aria-label="4 of 5 done"><span class="meter__fill" data-width="80"></span></span>
+        </div>
+        <ul class="checklist">
+          <li class="check-row is-done">
+            <span class="check-row__icon" aria-hidden="true">&#10003;</span>
+            <div>
+              <div class="check-row__name">Maya <span class="visually-hidden">list is done</span></div>
+              <div class="check-row__meta"><span class="pill pill--ok"><span aria-hidden="true">&#10003;</span> Text sent</span></div>
+            </div>
+            <div class="check-row__actions"><button class="btn btn--small" type="button">Re-send</button><button class="btn btn--small btn--quiet" type="button">Copy link</button></div>
+          </li>
+          <li class="check-row is-done">
+            <span class="check-row__icon" aria-hidden="true">&#10003;</span>
+            <div>
+              <div class="check-row__name">Ava <span class="visually-hidden">list is done</span></div>
+              <div class="check-row__meta"><span class="pill pill--ok"><span aria-hidden="true">&#10003;</span> Text sent</span></div>
+            </div>
+            <div class="check-row__actions"><button class="btn btn--small" type="button">Re-send</button><button class="btn btn--small btn--quiet" type="button">Copy link</button></div>
+          </li>
+          <li class="check-row is-todo">
+            <span class="check-row__icon" aria-hidden="true">&#10007;</span>
+            <div>
+              <div class="check-row__name">Zoe <span class="visually-hidden">list not done yet</span></div>
+              <div class="check-row__meta"><span class="pill pill--bad"><span aria-hidden="true">&#9888;</span> Text failed</span></div>
+            </div>
+            <div class="check-row__actions"><button class="btn btn--small" type="button">Re-send</button><button class="btn btn--small btn--quiet" type="button">Copy link</button></div>
+          </li>
+          <li class="check-row is-done">
+            <span class="check-row__icon" aria-hidden="true">&#10003;</span>
+            <div>
+              <div class="check-row__name">Nora <span class="visually-hidden">list is done</span></div>
+              <div class="check-row__meta"><span class="pill pill--ok"><span aria-hidden="true">&#10003;</span> Text sent</span></div>
+            </div>
+            <div class="check-row__actions"><button class="btn btn--small" type="button">Re-send</button><button class="btn btn--small btn--quiet" type="button">Copy link</button></div>
+          </li>
+          <li class="check-row is-done">
+            <span class="check-row__icon" aria-hidden="true">&#10003;</span>
+            <div>
+              <div class="check-row__name">Lily <span class="visually-hidden">list is done</span></div>
+              <div class="check-row__meta"><span class="pill pill--warn"><span aria-hidden="true">&#8987;</span> Not sent yet</span></div>
+            </div>
+            <div class="check-row__actions"><button class="btn btn--small" type="button">Re-send</button><button class="btn btn--small btn--quiet" type="button">Copy link</button></div>
+          </li>
+        </ul>
+      </section>
+
+      <div class="divider-cane" role="presentation"></div>
+
+      <section class="card" aria-labelledby="a-draw">
+        <div class="card__title"><img src="../img/hat.svg" alt=""><h2 id="a-draw">Draw the names</h2></div>
+        <p>Waiting for Zoe's list. Every list must be done before the draw.</p>
+        <div class="btn-row">
+          <button class="btn btn--primary" type="button" aria-disabled="true">Draw names</button>
+        </div>
+      </section>
+    </main>
+  </div>
+</section>
+
+<!-- (a2) Elf dashboard, after the draw -->
+<section class="screen" aria-labelledby="a2-label">
+  <p class="screen__label" id="a2-label">(a2) Elf: after the draw, before the names are sent</p>
+  <div class="app">
+    <header class="site-header">
+      <div class="snow" aria-hidden="true"></div>
+      <div class="site-header__inner">
+        <img class="brand-mark" src="../img/elf.svg" alt="">
+        <div><h1>Ava's Crew</h1><p class="site-header__sub">Names drawn. Nobody has been told yet.</p></div>
+      </div>
+      <div class="site-header__inner"><div class="facts"><span class="fact">$20</span><span class="fact">Fri Dec 19</span><span class="fact">Maya's house</span></div></div>
+    </header>
+    <main class="page stack">
+      <section class="card" aria-labelledby="a2-draw">
+        <div class="card__title"><img src="../img/gift.svg" alt=""><h2 id="a2-draw">Send the names</h2></div>
+        <p>You can shuffle as often as you like. Once you send the names, the draw is final.</p>
+        <div class="btn-row">
+          <button class="btn btn--primary" type="button">Send the names</button>
+          <button class="btn btn--secondary" type="button">Shuffle again</button>
+        </div>
+        <div class="btn-row btn-row--tight">
+          <button class="btn btn--quiet btn--small" type="button">Undo draw</button>
+        </div>
+        <div class="divider-cane" role="presentation"></div>
+        <label class="toggle">
+          <input type="checkbox" role="switch" data-test="show-matches">
+          <span class="toggle__track" aria-hidden="true"></span>
+          <span>Show matches <span class="muted">(off by default)</span></span>
+        </label>
+        <p class="muted">Peeking spoils the surprise for you. Turn this on only when you need to.</p>
+      </section>
+    </main>
+  </div>
+</section>
+
+<!-- (b) Member: wish list editor -->
+<section class="screen" aria-labelledby="b-label">
+  <p class="screen__label" id="b-label">(b) Member: my wish list</p>
+  <div class="app">
+    <header class="site-header">
+      <div class="snow" aria-hidden="true"></div>
+      <div class="site-header__inner">
+        <img class="brand-mark" src="../img/elf.svg" alt="">
+        <div><h1>Hi Maya!</h1><p class="site-header__sub">Ava's Crew Secret Santa</p></div>
+      </div>
+      <div class="site-header__inner"><div class="facts"><span class="fact">$20</span><span class="fact">Fri Dec 19</span><span class="fact">Maya's house</span></div></div>
+    </header>
+    <main class="page stack">
+      <div class="notice notice--bad" role="alert">
+        <span class="notice__text"><span aria-hidden="true">&#9888;</span> Could not save your list. Check your connection and try again.</span>
+        <button class="btn btn--small" type="button">Dismiss</button>
+      </div>
+
+      <section class="card" aria-labelledby="b-about">
+        <div class="card__title"><img src="../img/holly.svg" alt=""><h2 id="b-about">About me</h2></div>
+        <p class="muted">All of these are optional.</p>
+        <div class="field-grid">
+          <div class="field"><label class="field__label" for="b-color">Favorite color</label><input class="input" id="b-color" value="Teal"></div>
+          <div class="field"><label class="field__label" for="b-snack">Favorite snack or treat</label><input class="input" id="b-snack" value="Sour gummy worms"></div>
+          <div class="field"><label class="field__label" for="b-sizes">Sizes</label><input class="input" id="b-sizes" value="Youth M shirt, shoe 5"></div>
+          <div class="field"><label class="field__label" for="b-no">Please no&hellip;</label><input class="input" id="b-no" value="Nuts (allergy)"></div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="b-wish">
+        <div class="card__title"><img src="../img/gift.svg" alt=""><h2 id="b-wish">My wishes</h2></div>
+        <p class="muted">Up to 10. A link is optional. 3 of 10 so far.</p>
+        <div class="wish-edit">
+          <div class="wish-edit__head"><span>Wish 1</span><button class="btn btn--small btn--quiet" type="button">Remove</button></div>
+          <div class="field"><label class="field__label" for="b-w1">What do you wish for?</label><input class="input" id="b-w1" value="Glow-in-the-dark friendship bracelet kit"></div>
+          <div class="field"><label class="field__label" for="b-l1">Link (optional)</label><input class="input" id="b-l1" inputmode="url" value="https://example.com/bracelets"></div>
+        </div>
+        <div class="wish-edit">
+          <div class="wish-edit__head"><span>Wish 2</span><button class="btn btn--small btn--quiet" type="button">Remove</button></div>
+          <div class="field"><label class="field__label" for="b-w2">What do you wish for?</label><input class="input" id="b-w2" value="Fuzzy socks"></div>
+          <div class="field"><label class="field__label" for="b-l2">Link (optional)</label><input class="input" id="b-l2" inputmode="url" value="example.com/socks" aria-invalid="true" aria-describedby="b-l2e"><span class="field__error" id="b-l2e"><span aria-hidden="true">&#9888;</span> Links must start with http:// or https://</span></div>
+        </div>
+        <div class="wish-edit">
+          <div class="wish-edit__head"><span>Wish 3</span><button class="btn btn--small btn--quiet" type="button">Remove</button></div>
+          <div class="field"><label class="field__label" for="b-w3">What do you wish for?</label><input class="input" id="b-w3" value="A big sketchbook"></div>
+          <div class="field"><label class="field__label" for="b-l3">Link (optional)</label><input class="input" id="b-l3" inputmode="url" value=""></div>
+        </div>
+        <button class="btn btn--secondary btn--block" type="button">+ Add another wish</button>
+      </section>
+
+      <section class="card card--tint" aria-labelledby="b-done">
+        <h2 id="b-done">All finished?</h2>
+        <p>Tap the button so the Elf knows you're ready. You can still add more ideas later.</p>
+        <button class="btn btn--primary btn--block" type="button">I'm done!</button>
+      </section>
+    </main>
+  </div>
+</section>
+
+<!-- (c) Member: everyone's lists -->
+<section class="screen" aria-labelledby="c-label">
+  <p class="screen__label" id="c-label">(c) Member: everyone's lists</p>
+  <div class="app">
+    <header class="site-header">
+      <div class="snow" aria-hidden="true"></div>
+      <div class="site-header__inner">
+        <img class="brand-mark" src="../img/elf.svg" alt="">
+        <div><h1>Hi Maya!</h1><p class="site-header__sub">Ava's Crew Secret Santa</p></div>
+      </div>
+    </header>
+    <main class="page">
+      <div class="band">
+        <div class="band__inner">
+          <div class="row"><img class="spot" src="../img/candy-cane.svg" alt=""><h2>Everyone's wish lists</h2></div>
+          <p>Peek at what your friends are hoping for.</p>
+        </div>
+      </div>
+      <section class="card" aria-label="Wish lists">
+        <article class="person">
+          <h3 class="person__name">Ava <span class="pill pill--ok"><span aria-hidden="true">&#10003;</span> Done</span></h3>
+          <dl class="about">
+            <dt>Favorite color</dt><dd>Purple</dd>
+            <dt>Favorite treat</dt><dd>Hot chocolate</dd>
+            <dt>Sizes</dt><dd>Youth S, shoe 4</dd>
+            <dt>Please no&hellip;</dt><dd>Anything with glitter</dd>
+          </dl>
+          <ol class="wishes">
+            <li><span class="wishes__body">Watercolor paint set <a href="https://example.com/paint" target="_blank" rel="noopener noreferrer">See link (opens a new tab)</a></span></li>
+            <li><span class="wishes__body">A book about dragons</span></li>
+            <li><span class="wishes__body">Mini fairy lights</span></li>
+          </ol>
+        </article>
+        <article class="person">
+          <h3 class="person__name">Nora <span class="pill pill--ok"><span aria-hidden="true">&#10003;</span> Done</span></h3>
+          <dl class="about"><dt>Favorite color</dt><dd>Orange</dd><dt>Favorite treat</dt><dd>Popcorn</dd></dl>
+          <ol class="wishes">
+            <li><span class="wishes__body">Soccer ball (size 4)</span></li>
+            <li><span class="wishes__body">Scented markers <a href="https://example.com/markers" target="_blank" rel="noopener noreferrer">See link (opens a new tab)</a></span></li>
+          </ol>
+        </article>
+        <article class="person">
+          <h3 class="person__name">Zoe <span class="pill pill--warn"><span aria-hidden="true">&#10007;</span> Not done yet</span></h3>
+          <p class="muted">Zoe is still thinking.</p>
+        </article>
+      </section>
+    </main>
+  </div>
+</section>
+
+<!-- (d) Member: the reveal -->
+<section class="screen" aria-labelledby="d-label">
+  <p class="screen__label" id="d-label">(d) Member: the reveal</p>
+  <div class="app">
+    <header class="site-header">
+      <div class="snow" aria-hidden="true"></div>
+      <div class="site-header__inner">
+        <img class="brand-mark" src="../img/elf.svg" alt="">
+        <div><h1>Hi Maya!</h1><p class="site-header__sub">Ava's Crew Secret Santa</p></div>
+      </div>
+    </header>
+    <main class="page stack">
+      <section class="reveal" aria-labelledby="d-name">
+        <div class="snow" aria-hidden="true"></div>
+        <img class="reveal__gift" src="../img/gift.svg" alt="">
+        <p class="reveal__kicker">You drew&hellip;</p>
+        <h2 class="reveal__name" id="d-name" data-test="drawn-name">Ava!</h2>
+        <div class="divider-cane" role="presentation"></div>
+        <p class="reveal__facts">$20 &middot; Fri Dec 19 &middot; Maya's house</p>
+        <p>Shh! Keep it secret until the swap.</p>
+      </section>
+
+      <section class="card" aria-labelledby="d-list">
+        <div class="card__title"><img src="../img/mitten.svg" alt=""><h2 id="d-list">Ava's wish list</h2></div>
+        <dl class="about">
+          <dt>Favorite color</dt><dd>Purple</dd>
+          <dt>Favorite treat</dt><dd>Hot chocolate</dd>
+          <dt>Sizes</dt><dd>Youth S, shoe 4</dd>
+          <dt>Please no&hellip;</dt><dd>Anything with glitter</dd>
+        </dl>
+        <ol class="wishes">
+          <li><span class="wishes__body">Watercolor paint set <a href="https://example.com/paint" target="_blank" rel="noopener noreferrer">See link (opens a new tab)</a></span></li>
+          <li><span class="wishes__body">A book about dragons</span></li>
+          <li><span class="wishes__body">Mini fairy lights</span></li>
+        </ol>
+      </section>
+      <p class="center muted">Your own list is still editable. Tap "Edit my list" any time.</p>
+      <button class="btn btn--secondary btn--block" type="button">Edit my list</button>
+    </main>
+  </div>
+</section>
+
+<script>
+  // Meter width without an inline style attribute: set via CSSOM.
+  document.querySelectorAll('[data-width]').forEach(function (el) { el.style.width = el.dataset.width + '%'; });
+</script>
+</body>
+</html>

@@ -1,0 +1,309 @@
+/* Secret Santa - one stylesheet, built on tokens. Look: "Elf workshop".
+   Heading font: Fredoka, self-hosted in ../fonts/ (SIL OFL, licence alongside). Body: system font stack. */
+@font-face {
+  font-family: "Fredoka";
+  src: url("../fonts/Fredoka-latin.woff2") format("woff2");
+  font-weight: 300 700; font-stretch: 75% 125%; font-style: normal; font-display: swap;
+}
+
+/* ---------- 1. Tokens ---------- */
+:root {
+  /* palette: named roles (Elf workshop) */
+  --bg: #FFF6E5;            /* page: warm cream */
+  --surface: #FFFFFF;       /* cards, inputs */
+  --tint: #FFEFD2;          /* quiet panels, disabled buttons */
+  --ink: #3A2216;           /* body text, warm dark brown */
+  --ink-soft: #6A4A38;      /* secondary text */
+  --outline: #4A2B1A;       /* the thick cartoon outline */
+  --sticker: #FFFFFF;       /* the white sticker border */
+  --shadow: rgba(74, 43, 26, 0.28);
+  --accent: #B81D24;        /* Santa red: primary buttons */
+  --on-accent: #FFFFFF;
+  --accent-2: #1E6B3C;      /* elf green */
+  --on-accent-2: #FFFFFF;
+  --header-bg: #1E6B3C;
+  --on-header: #FFFFFF;
+  --gold: #F2B632;          /* number badges and decoration */
+  --on-gold: #3A2216;
+  --link: #A3151C;
+  --focus: #1F4FD8;
+  --field-bg: #FFFFFF;
+  --field-border: #7A5A46;
+  --band-bg: #DCEFD9;       /* zigzag section band */
+  --on-band: #123F25;
+  --reveal-bg: #B81D24;
+  --on-reveal: #FFFFFF;
+  --ok-bg: #DDF3E2;   --ok-ink: #14532D;
+  --warn-bg: #FFE9B8; --warn-ink: #5A3A00;
+  --bad-bg: #FBDADA;  --bad-ink: #7F1218;
+  --info-bg: #E3EDFB; --info-ink: #1B3A73;
+  --stripe-a: #C8281E; --stripe-b: #FFFFFF;
+  --snow: rgba(255, 255, 255, 0.85);
+  --card-stripe: none;      /* "block" turns on the candy ribbon on cards */
+
+  /* spacing scale */
+  --sp-1: 0.25rem; --sp-2: 0.5rem; --sp-3: 0.75rem; --sp-4: 1rem;
+  --sp-5: 1.5rem;  --sp-6: 2rem;   --sp-7: 3rem;    --sp-8: 4rem;
+
+  /* type scale from a 16px base */
+  --fs-0: 1rem; --fs-1: 1.125rem; --fs-2: 1.25rem; --fs-3: 1.5rem; --fs-4: 2rem; --fs-5: 3rem; --fs-6: 4rem;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-head: "Fredoka", ui-rounded, "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif;
+
+  /* shape */
+  --radius: 1rem; --radius-sm: 0.75rem; --line: 3px; --tap: 2.75rem; /* 44px */
+  --zig: 1.5rem;            /* zigzag tooth width */
+}
+
+/* ---------- 2. Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: var(--fs-0); line-height: 1.5;
+  overflow-wrap: anywhere;            /* long names and links never force sideways scroll */
+}
+h1, h2, h3 { font-family: var(--font-head); font-weight: 600; line-height: 1.15; margin: 0 0 var(--sp-3); }
+h1 { font-size: var(--fs-4); }
+h2 { font-size: var(--fs-3); }
+h3 { font-size: var(--fs-2); }
+p { margin: 0 0 var(--sp-3); }
+a { color: var(--link); text-underline-offset: 0.2em; text-decoration-thickness: 2px; }
+img, svg { max-width: 100%; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+:focus-visible { outline: 4px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; margin: -1px; padding: 0; border: 0;
+}
+.skip-link { position: absolute; left: var(--sp-2); top: -4rem; z-index: 10; background: var(--surface); color: var(--ink); padding: var(--sp-3) var(--sp-4); border: var(--line) solid var(--outline); border-radius: var(--radius-sm); }
+.skip-link:focus { top: var(--sp-2); }
+
+/* ---------- 3. Layout ---------- */
+.page { max-width: 42rem; margin: 0 auto; padding: var(--sp-5) var(--sp-3) var(--sp-7); }
+.stack > * + * { margin-top: var(--sp-5); }
+.stack-sm > * + * { margin-top: var(--sp-3); }
+.row { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
+.row--between { justify-content: space-between; }
+.grow { flex: 1 1 12rem; min-width: 0; }
+.muted { color: var(--ink-soft); }
+.center { text-align: center; }
+
+/* ---------- 4. Header: green banner with a zigzag edge ---------- */
+.site-header {
+  position: relative; background: var(--header-bg); color: var(--on-header);
+  padding: var(--sp-4) var(--sp-4) var(--sp-5); margin-bottom: var(--zig);
+  border-bottom: var(--line) solid var(--outline);
+}
+.site-header::after {            /* the zigzag teeth hanging off the banner */
+  content: ""; position: absolute; left: 0; right: 0; top: 100%; height: calc(var(--zig) / 2);
+  background: conic-gradient(from -45deg at bottom, transparent, var(--header-bg) 1deg 89deg, transparent 90deg) 50% 0 / var(--zig) 100%;
+  filter: drop-shadow(0 3px 0 var(--outline));
+}
+.site-header__inner { position: relative; z-index: 1; max-width: 42rem; margin: 0 auto; display: flex; align-items: center; gap: var(--sp-3); }
+.site-header h1 { margin: 0; font-size: var(--fs-3); color: var(--on-header); }
+.brand-mark { width: 3.5rem; height: auto; flex: none; filter: drop-shadow(0 0 0 var(--sticker)); }
+.site-header__sub { margin: 0; color: var(--on-header); }
+.site-header a { color: var(--on-header); }
+.site-header :focus-visible { outline-color: var(--on-header); }
+
+/* circle facts: "$20 . Fri Dec 19 . Maya's house" */
+.facts { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.fact {
+  display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 2.25rem; padding: 0 var(--sp-3);
+  background: var(--surface); color: var(--ink); border: 2px solid var(--outline); border-radius: 999px; font-weight: 700;
+}
+
+/* ---------- 5. Sticker card ---------- */
+.card {
+  position: relative; background: var(--surface); color: var(--ink);
+  border: var(--line) solid var(--outline); border-radius: var(--radius);
+  padding: var(--sp-5) var(--sp-4);
+  box-shadow: 0 0 0 4px var(--sticker), 0 8px 16px var(--shadow);   /* white sticker border + soft shadow */
+  margin-left: 4px; margin-right: 4px;                                /* room for the sticker ring at 375px */
+}
+.card--tint { background: var(--tint); }
+.card::before {                  /* optional candy ribbon (Candy cane direction) */
+  content: ""; display: var(--card-stripe); height: 0.75rem; margin: calc(-1 * var(--sp-5)) calc(-1 * var(--sp-4)) var(--sp-4);
+  border-radius: calc(var(--radius) - var(--line)) calc(var(--radius) - var(--line)) 0 0; border-bottom: 2px solid var(--outline);
+  background: repeating-linear-gradient(-45deg, var(--stripe-a) 0 0.75rem, var(--stripe-b) 0.75rem 1.5rem);
+}
+.card__title { display: flex; align-items: center; gap: var(--sp-3); }
+.card__title img { width: 2.5rem; height: 2.5rem; flex: none; }
+.card__title h2 { margin: 0; }
+
+/* ---------- 6. Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  min-height: 3rem; min-width: var(--tap); padding: var(--sp-2) var(--sp-5);
+  font: 700 var(--fs-1)/1.2 var(--font-body); text-align: center; text-decoration: none; cursor: pointer;
+  color: var(--ink); background: var(--surface); border: var(--line) solid var(--outline); border-radius: var(--radius-sm);
+  box-shadow: 0 4px 0 var(--outline); transition: transform 0.08s, box-shadow 0.08s;
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--outline); }
+.btn--primary { background: var(--accent); color: var(--on-accent); }
+.btn--secondary { background: var(--accent-2); color: var(--on-accent-2); }
+.btn--quiet { background: var(--surface); color: var(--ink); }
+.btn--small { min-height: var(--tap); padding: var(--sp-1) var(--sp-3); font-size: var(--fs-0); box-shadow: 0 3px 0 var(--outline); }
+.btn--block { display: flex; width: 100%; }
+.btn[disabled], .btn[aria-disabled="true"] {
+  background: var(--tint); color: var(--ink-soft); border-style: dashed; box-shadow: none; cursor: not-allowed; transform: none;
+}
+.btn-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.btn-row > .btn { flex: 1 1 11rem; }
+.btn-row--tight > .btn { flex: 0 1 auto; }
+.btn-row + .btn-row { margin-top: var(--sp-3); }
+
+/* ---------- 7. Fields: labels are always visible ---------- */
+.field { display: block; margin-bottom: var(--sp-4); }
+.field__label { display: block; font-weight: 700; margin-bottom: var(--sp-1); }
+.field__hint { display: block; color: var(--ink-soft); margin-bottom: var(--sp-2); }
+.input, .textarea {
+  display: block; width: 100%; min-height: 3rem; padding: var(--sp-2) var(--sp-3);
+  font: inherit; font-size: var(--fs-0); color: var(--ink); background: var(--field-bg);
+  border: 2px solid var(--field-border); border-radius: var(--radius-sm);
+}
+.textarea { min-height: 5.5rem; resize: vertical; }
+.input:focus-visible, .textarea:focus-visible { border-color: var(--focus); outline-offset: 2px; }
+.input[aria-invalid="true"] { border-width: 4px; border-color: var(--bad-ink); padding: calc(var(--sp-2) - 2px) calc(var(--sp-3) - 2px); }
+.field__error { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); font-weight: 700; color: var(--bad-ink); }
+.field-grid { display: grid; gap: 0 var(--sp-4); grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+
+/* wish items: text + optional link + remove */
+.wish-edit { padding: var(--sp-4); margin-bottom: var(--sp-3); background: var(--tint); border: 2px dashed var(--field-border); border-radius: var(--radius-sm); }
+.wish-edit .field:last-of-type { margin-bottom: var(--sp-3); }
+.wish-edit__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-2); font-weight: 700; }
+
+/* ---------- 8. Checklist row (done / not done: icon AND words, not only colour) ---------- */
+.checklist { border: var(--line) solid var(--outline); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+.check-row { display: grid; grid-template-columns: 2.25rem 1fr; gap: 0 var(--sp-2); padding: var(--sp-3) var(--sp-2); align-items: start; }
+.check-row + .check-row { border-top: 2px dashed var(--field-border); }
+.check-row__icon {
+  display: grid; place-items: center; width: 2.25rem; height: 2.25rem; margin-top: 2px; font-weight: 900; font-size: var(--fs-1); line-height: 1;
+  border: 3px solid var(--outline);
+}
+.check-row.is-done .check-row__icon { background: var(--ok-bg); color: var(--ok-ink); border-radius: 50%; }          /* round tick */
+.check-row.is-todo .check-row__icon { background: var(--warn-bg); color: var(--warn-ink); border-radius: 0.4rem; }  /* square cross */
+.check-row__name { font-weight: 700; font-size: var(--fs-1); }
+.check-row__meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; margin-top: var(--sp-1); }
+.check-row__actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-1); }
+.progress-line { display: flex; align-items: center; gap: var(--sp-3); font-weight: 700; margin-bottom: var(--sp-3); }
+.meter { flex: 1; height: 1.25rem; border: var(--line) solid var(--outline); border-radius: 999px; background: var(--surface); overflow: hidden; }
+.meter__fill { display: block; height: 100%; background: repeating-linear-gradient(-45deg, var(--stripe-a) 0 0.6rem, var(--stripe-b) 0.6rem 1.2rem); }
+
+/* ---------- 9. Status pill (always has a symbol and a word) ---------- */
+.pill {
+  display: inline-flex; align-items: center; gap: var(--sp-1); padding: 0.125rem var(--sp-3); min-height: 2rem;
+  font-weight: 700; font-size: var(--fs-0); border-radius: 999px; border: 2px solid currentColor; white-space: nowrap;
+}
+.pill--ok { background: var(--ok-bg); color: var(--ok-ink); }
+.pill--warn { background: var(--warn-bg); color: var(--warn-ink); }
+.pill--bad { background: var(--bad-bg); color: var(--bad-ink); }
+.pill--info { background: var(--info-bg); color: var(--info-ink); }
+
+/* ---------- 10. Notices (errors stay until dismissed) ---------- */
+.notice { display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-3) var(--sp-4); border: var(--line) solid currentColor; border-radius: var(--radius-sm); font-weight: 700; }
+.notice__text { flex: 1; }
+.notice--bad { background: var(--bad-bg); color: var(--bad-ink); }
+.notice--ok { background: var(--ok-bg); color: var(--ok-ink); }
+.notice--info { background: var(--info-bg); color: var(--info-ink); }
+.notice .btn { color: inherit; background: transparent; border-color: currentColor; box-shadow: none; }
+
+/* ---------- 11. Toggle switch ("Show matches") ---------- */
+.toggle { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--tap); font-weight: 700; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.toggle__track {
+  position: relative; flex: none; width: 3.5rem; height: 2rem; border: var(--line) solid var(--outline); border-radius: 999px; background: var(--tint);
+}
+.toggle__track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--ink); transition: transform 0.15s; }
+.toggle input:checked + .toggle__track { background: var(--accent-2); }
+.toggle input:checked + .toggle__track::after { transform: translateX(1.5rem); background: var(--on-accent-2); }
+.toggle input:focus-visible + .toggle__track { outline: 4px solid var(--focus); outline-offset: 3px; }
+.toggle__state { min-width: 2.5rem; }
+
+/* ---------- 12. Decoration ---------- */
+.divider-cane {                  /* candy-cane stripe */
+  height: 0.875rem; border: var(--line) solid var(--outline); border-radius: 999px; margin: var(--sp-5) 0;
+  background: repeating-linear-gradient(-45deg, var(--stripe-a) 0 0.75rem, var(--stripe-b) 0.75rem 1.5rem);
+}
+.band {                          /* full-width section with a zigzag top and bottom */
+  position: relative; background: var(--band-bg); color: var(--on-band);
+  padding: var(--sp-5) var(--sp-4); margin: calc(var(--zig) + var(--sp-5)) calc(-1 * var(--sp-3));
+}
+.band::before, .band::after { content: ""; position: absolute; left: 0; right: 0; height: calc(var(--zig) / 2); }
+.band::before { bottom: 100%; background: conic-gradient(from 135deg at top, transparent, var(--band-bg) 1deg 89deg, transparent 90deg) 50% 0 / var(--zig) 100%; }
+.band::after  { top: 100%;    background: conic-gradient(from -45deg at bottom, transparent, var(--band-bg) 1deg 89deg, transparent 90deg) 50% 0 / var(--zig) 100%; }
+.band__inner { max-width: 42rem; margin: 0 auto; }
+.band h2 { color: var(--on-band); }
+.spot { width: 3rem; height: 3rem; flex: none; }
+
+/* subtle snowfall: put <div class="snow" aria-hidden="true"></div> inside a position:relative, overflow:hidden container */
+.snow { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.snow::before, .snow::after { content: ""; position: absolute; inset: -100% 0 0 0; }
+.snow::before {
+  background:
+    radial-gradient(3px 3px at 20px 30px, var(--snow) 98%, transparent),
+    radial-gradient(2px 2px at 90px 80px, var(--snow) 98%, transparent),
+    radial-gradient(3px 3px at 160px 20px, var(--snow) 98%, transparent),
+    radial-gradient(2px 2px at 240px 120px, var(--snow) 98%, transparent);
+  background-size: 280px 160px; animation: snow-fall 14s linear infinite;
+}
+.snow::after {
+  background:
+    radial-gradient(2px 2px at 50px 60px, var(--snow) 98%, transparent),
+    radial-gradient(3px 3px at 130px 140px, var(--snow) 98%, transparent),
+    radial-gradient(2px 2px at 210px 40px, var(--snow) 98%, transparent);
+  background-size: 230px 190px; animation: snow-fall 22s linear infinite; opacity: 0.7;
+}
+@keyframes snow-fall { to { transform: translateY(50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .snow::before, .snow::after { animation: none; }
+  .btn, .toggle__track::after { transition: none; }
+}
+
+/* ---------- 13. Wish list view (everyone's lists) ---------- */
+.person { padding: var(--sp-4) 0; }
+.person + .person { border-top: 2px dashed var(--field-border); }
+.person__name { display: flex; align-items: center; gap: var(--sp-2); font-family: var(--font-head); font-size: var(--fs-2); font-weight: 600; margin: 0 0 var(--sp-2); }
+.about { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-3); margin: 0 0 var(--sp-3); }
+.about dt { font-weight: 700; }
+.about dd { margin: 0; }
+.wishes { counter-reset: wish; }
+.wishes li { counter-increment: wish; display: flex; gap: var(--sp-3); padding: var(--sp-2) 0; }
+.wishes li::before {
+  content: counter(wish); flex: none; display: grid; place-items: center; width: 2rem; height: 2rem; margin-top: 2px;
+  font-weight: 700; background: var(--gold); color: var(--on-gold); border: 2px solid var(--outline); border-radius: 50%;
+}
+.wishes a { display: inline-block; min-height: var(--tap); padding-top: 0.5rem; font-weight: 700; }
+.wishes__body { min-width: 0; }
+details.person-fold > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; gap: var(--sp-2); font-weight: 700; }
+
+/* ---------- 14. The reveal ---------- */
+.reveal {
+  position: relative; overflow: hidden; text-align: center; background: var(--reveal-bg); color: var(--on-reveal);
+  border: var(--line) solid var(--outline); border-radius: calc(var(--radius) * 1.5);
+  padding: var(--sp-6) var(--sp-4); margin: 0 4px;
+  box-shadow: 0 0 0 4px var(--sticker), 0 10px 22px var(--shadow);
+}
+.reveal > * { position: relative; z-index: 1; }
+.reveal__gift { width: 6.5rem; height: 6.5rem; padding: 0.75rem; margin: 0 auto var(--sp-2); display: block; background: var(--sticker); border: var(--line) solid var(--outline); border-radius: 50%; }
+.reveal__kicker { font-family: var(--font-head); font-size: var(--fs-2); font-weight: 600; margin: 0; }
+.reveal__name { font-family: var(--font-head); font-weight: 700; font-size: var(--fs-5); line-height: 1.05; margin: var(--sp-2) 0 var(--sp-3); }
+.reveal__facts { margin: 0 0 var(--sp-3); font-weight: 700; font-size: var(--fs-1); }
+.reveal .divider-cane { margin: var(--sp-4) auto; max-width: 14rem; }
+.reveal .snow { z-index: 0; }
+
+/* ---------- 15. Wider screens ---------- */
+@media (min-width: 40rem) {
+  :root { --sp-5: 1.75rem; }
+  h1 { font-size: 2.5rem; }
+  .site-header h1 { font-size: var(--fs-4); }
+  .page { padding-inline: var(--sp-4); }
+  .band { margin-inline: calc(-1 * var(--sp-4)); }
+  .card { padding: var(--sp-5); }
+  .check-row { padding: var(--sp-3) var(--sp-4); gap: 0 var(--sp-3); }
+  .card::before { margin: calc(-1 * var(--sp-5)) calc(-1 * var(--sp-5)) var(--sp-4); }
+  .reveal__name { font-size: var(--fs-6); }
+  .check-row { grid-template-columns: 2.25rem 1fr auto; }
+  .check-row__actions { margin-top: 0; grid-column: 3; grid-row: 1; justify-content: flex-end; align-self: center; }
+}

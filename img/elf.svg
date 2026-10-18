@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 170" role="img" aria-label="A friendly elf">
+  <g stroke="#4A2B1A" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">
+    <!-- sticker border -->
+    <!-- pigtails -->
+    <path d="M36 96 C22 100 20 126 34 130 C44 128 44 108 42 96 Z" fill="#8A4F2B"/>
+    <path d="M124 96 C138 100 140 126 126 130 C116 128 116 108 118 96 Z" fill="#8A4F2B"/>
+    <!-- tunic -->
+    <path d="M44 168 L44 146 C44 134 60 130 80 130 C100 130 116 134 116 146 L116 168 Z" fill="#2F8A4B"/>
+    <path d="M44 160 l8 8 l8 -8 l8 8 l8 -8 l8 8 l8 -8 l8 8 l8 -8 l4 8" fill="none"/>
+    <!-- collar -->
+    <path d="M52 134 L60 146 L70 136 L80 148 L90 136 L100 146 L108 134 C98 130 62 130 52 134 Z" fill="#D8412F"/>
+    <!-- ears -->
+    <path d="M32 84 L10 70 L34 104 Z" fill="#F5C39A"/>
+    <path d="M128 84 L150 70 L126 104 Z" fill="#F5C39A"/>
+    <!-- head -->
+    <ellipse cx="80" cy="96" rx="48" ry="38" fill="#F5C39A"/>
+    <!-- fringe -->
+    <path d="M36 82 C50 74 64 66 80 64 C96 66 110 74 124 82 C118 92 110 86 100 80 C92 90 78 90 70 80 C64 90 46 92 36 82 Z" fill="#8A4F2B"/>
+    <!-- hat -->
+    <path d="M30 78 C34 50 56 30 86 26 C106 24 124 14 140 8 C136 24 140 44 130 78 C100 66 60 66 30 78 Z" fill="#2F8A4B"/>
+    <path d="M30 78 C60 66 100 66 130 78 L132 92 C100 80 60 80 28 92 Z" fill="#D8412F"/>
+    <circle cx="142" cy="8" r="8" fill="#F2B632"/>
+  </g>
+  <!-- face -->
+  <circle cx="62" cy="102" r="5.5" fill="#4A2B1A"/><circle cx="98" cy="102" r="5.5" fill="#4A2B1A"/>
+  <circle cx="64" cy="100" r="1.8" fill="#fff"/><circle cx="100" cy="100" r="1.8" fill="#fff"/>
+  <circle cx="50" cy="114" r="6" fill="#F08A7A" opacity=".6"/><circle cx="110" cy="114" r="6" fill="#F08A7A" opacity=".6"/>
+  <path d="M72 114 Q80 122 88 114" fill="none" stroke="#4A2B1A" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

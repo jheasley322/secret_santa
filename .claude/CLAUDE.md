@@ -41,6 +41,15 @@ Each phase in .zReference/master_plan.md runs in the same order. 1) test-author 
 - Direct teammate access available when needed
 - Re-generate this team: `python generate_agent_team.py`
 
+## Supabase Project
+
+- **Project:** `secret-santa`, ref `hnnzoiuibnikrucncphu`, URL `https://hnnzoiuibnikrucncphu.supabase.co`
+- The Supabase MCP connector can also reach other live projects, including `seabreeze-cottage`.
+  **Always pass `hnnzoiuibnikrucncphu`** and never touch another project.
+- The publishable key is meant to be public and ships in `js/supabaseClient.js`.
+- The secret key (GitHub secret `SANTA_SECRET`) is used only by CI. It never goes in front-end
+  code or the repo. Edge Functions get their own copy from Supabase automatically.
+
 ## Project Rules (all agents)
 
 1. **The spec is authoritative.** `.zReference/original_specs.md` beats existing code.
@@ -59,7 +68,15 @@ Each phase in .zReference/master_plan.md runs in the same order. 1) test-author 
 7. **Escape everything rendered.** Prefer `textContent`.
 8. **Never commit, print or set secrets.** `TEXTBELT_KEY` and the service-role key are Joe's to
    set. `.gitignore` covers `.env*`.
-9. **Never send a real text** unless Joe asks for that specific send. Tests and development use
-   `TEXTS_DRY_RUN=true`, and a missing value means dry run.
+9. **HARD LIMIT on texts (Joe's orders).** The Textbelt key has only **50 credits** (Joe may buy more, up to about 700 in total).
+   - **No agent ever sends a real text.** Tests and development use `TEXTS_DRY_RUN=true`, and
+     a missing value means dry run.
+   - **No real text containing a link** may be sent until Joe says the Textbelt URL whitelist
+     is approved (`TEXT_LINKS_APPROVED`, default false).
+   - The Edge Function enforces a lifetime cap. See spec "Texting → HARD LIMITS".
+   - The real key is in the local `.env` as `TEXTBELT_API_KEY` (Joe's copy). **No agent,
+     script or test may read, load, print or use it.** Tests must not load `.env` in any way
+     that exposes it to texting code. The Edge Function reads its own `TEXTBELT_KEY` from
+     Supabase secrets, which Joe sets.
 10. **Test-first.** test-author writes tests from the spec before implementation, and qa-gate
     must PASS before a phase is done.

@@ -1,0 +1,6 @@
+/* Preview-only chrome (screen frames). The real design lives in ../css/styles.css. */
+body { padding-bottom: var(--sp-7); }
+.screen { max-width: 46rem; margin: var(--sp-6) auto 0; padding: 0; }
+.screen__label { margin: 0 0 var(--sp-2); padding: 0 var(--sp-2); font-weight: 700; color: var(--ink-soft); }
+.app { background: var(--bg); border: 2px dashed var(--field-border); border-radius: var(--radius); overflow: hidden; }
+.app .page { padding-top: 0; }
