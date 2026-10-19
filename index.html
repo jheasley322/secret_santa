@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secret Santa</title>
+  <meta name="referrer" content="no-referrer">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="img/gift.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the page</a>
+  <header class="site-header">
+    <div class="snow" aria-hidden="true"></div>
+    <div class="site-header__inner">
+      <img class="brand-mark" src="img/elf.svg" alt="">
+      <div>
+        <h1>Secret Santa</h1>
+        <p class="site-header__sub">For the Elf who runs the swap</p>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="page stack">
+    <div id="notices" class="stack-sm"></div>
+
+    <!-- Signed out: email magic link -->
+    <section id="signed-out" class="card" aria-labelledby="signin-title" hidden>
+      <div class="card__title"><img src="img/hat.svg" alt=""><h2 id="signin-title">Sign in</h2></div>
+      <p>Type your email and we'll send you a sign-in link. No password needed.</p>
+      <form id="sign-in" novalidate>
+        <div class="field">
+          <label class="field__label" for="email">Email</label>
+          <input class="input" id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
+        </div>
+        <button class="btn btn--primary btn--block" type="submit">Send me a sign-in link</button>
+      </form>
+    </section>
+
+    <!-- Signed in: my circles + create -->
+    <div id="signed-in" class="stack" hidden>
+      <section class="card" aria-labelledby="circles-title">
+        <div class="card__title"><img src="img/mitten.svg" alt=""><h2 id="circles-title">My circles</h2></div>
+        <ul id="circle-list" class="checklist" data-test="circle-list" hidden></ul>
+        <p id="no-circles" class="muted" hidden>No circles yet. Start one below.</p>
+      </section>
+
+      <div class="divider-cane" role="presentation"></div>
+
+      <section class="card" aria-labelledby="create-title">
+        <div class="card__title"><img src="img/gift.svg" alt=""><h2 id="create-title">Start a new circle</h2></div>
+        <form id="create-circle" novalidate>
+          <div class="field">
+            <label class="field__label" for="c-name">Circle name</label>
+            <span class="field__hint" id="c-name-hint">For example: Ava's Crew</span>
+            <input class="input" id="c-name" name="name" maxlength="80" required aria-describedby="c-name-hint">
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label class="field__label" for="c-budget">Budget (dollars)</label>
+              <input class="input" id="c-budget" name="budget" type="number" min="0" step="1" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label class="field__label" for="c-date">Swap date</label>
+              <input class="input" id="c-date" name="swap_date" type="date">
+            </div>
+          </div>
+          <div class="field">
+            <label class="field__label" for="c-place">Place (optional)</label>
+            <input class="input" id="c-place" name="swap_place" maxlength="200">
+          </div>
+          <button class="btn btn--primary btn--block" type="submit">Create circle</button>
+        </form>
+      </section>
+
+      <p class="center muted">
+        Signed in as <span id="who"></span>.
+      </p>
+      <div class="btn-row btn-row--tight">
+        <button id="sign-out" class="btn btn--small btn--quiet" type="button">Sign out</button>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="js/index.js"></script>
+</body>
+</html>

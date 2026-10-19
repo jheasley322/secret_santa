@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Circle - Secret Santa</title>
+  <meta name="referrer" content="no-referrer">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="img/gift.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the page</a>
+  <header class="site-header">
+    <div class="snow" aria-hidden="true"></div>
+    <div class="site-header__inner">
+      <img class="brand-mark" src="img/elf.svg" alt="">
+      <div>
+        <h1 id="circle-name">Secret Santa</h1>
+        <p class="site-header__sub" id="circle-sub">Loading&hellip;</p>
+      </div>
+    </div>
+    <div class="site-header__inner">
+      <div class="facts" id="facts"></div>
+    </div>
+  </header>
+
+  <main id="main" class="page stack">
+    <p><a href="index.html">&larr; My circles</a></p>
+    <div id="notices" class="stack-sm"></div>
+
+    <section id="not-found" class="card" aria-labelledby="nf-title" hidden>
+      <h2 id="nf-title">Circle not found</h2>
+      <p>This circle doesn't exist, or it belongs to a different Elf.</p>
+      <a class="btn btn--secondary" href="index.html">Back to my circles</a>
+    </section>
+
+    <div id="circle-view" class="stack" hidden>
+      <!-- Progress + members (approved mock, screen a) -->
+      <section class="card" aria-labelledby="prog-title">
+        <div class="card__title"><img src="img/mitten.svg" alt=""><h2 id="prog-title">Wish lists</h2></div>
+        <div class="progress-line" id="progress" hidden>
+          <span id="progress-text"></span>
+          <span class="meter" role="img" id="progress-meter"><span class="meter__fill" id="progress-fill"></span></span>
+        </div>
+        <ul class="checklist" id="member-list" hidden></ul>
+        <p class="muted" id="no-members">No kids yet. Add them below.</p>
+
+        <div id="invite-box" class="stack-sm" hidden>
+          <div class="divider-cane" role="presentation"></div>
+          <p class="muted">Texts each kid their own link. Kids who already got an invite are skipped.</p>
+          <div class="btn-row">
+            <button class="btn btn--primary" type="button" id="send-invites">Send invites</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Add a kid -->
+      <section class="card" aria-labelledby="add-title" id="add-card">
+        <div class="card__title"><img src="img/holly.svg" alt=""><h2 id="add-title">Add a kid</h2></div>
+        <form id="add-member" novalidate>
+          <div class="field-grid">
+            <div class="field">
+              <label class="field__label" for="m-name">First name</label>
+              <input class="input" id="m-name" name="first_name" maxlength="40" autocomplete="off" required>
+            </div>
+            <div class="field">
+              <label class="field__label" for="m-phone">Mobile number</label>
+              <span class="field__hint" id="m-phone-hint">Their text goes here, e.g. (555) 555-0101</span>
+              <input class="input" id="m-phone" name="phone" type="tel" inputmode="tel" autocomplete="off" required aria-describedby="m-phone-hint">
+            </div>
+          </div>
+          <button class="btn btn--secondary btn--block" type="submit">Add</button>
+        </form>
+      </section>
+      <p class="muted" id="locked-note" hidden>The names are drawn, so kids can't be added or removed now.</p>
+
+      <!-- Circle details (the Elf can edit these at any time) -->
+      <section class="card" aria-labelledby="details-title">
+        <div class="card__title"><img src="img/candy-cane.svg" alt=""><h2 id="details-title">Circle details</h2></div>
+        <details class="person-fold">
+          <summary>Edit details</summary>
+          <form id="edit-circle" novalidate>
+            <div class="field">
+              <label class="field__label" for="e-name">Circle name</label>
+              <input class="input" id="e-name" name="name" maxlength="80" required>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label class="field__label" for="e-budget">Gift budget in dollars</label>
+                <input class="input" id="e-budget" name="budget" type="number" min="0" step="1" inputmode="numeric">
+              </div>
+              <div class="field">
+                <label class="field__label" for="e-date">Swap day</label>
+                <input class="input" id="e-date" name="swap_date" type="date">
+              </div>
+            </div>
+            <div class="field">
+              <label class="field__label" for="e-place">Where (optional)</label>
+              <input class="input" id="e-place" name="swap_place" maxlength="200">
+            </div>
+            <button class="btn btn--secondary btn--block" type="submit">Save details</button>
+          </form>
+        </details>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="js/circle.js"></script>
+</body>
+</html>
