@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.js'],
     environment: 'node',
+    // Belt and braces: nothing in a unit test can text, and dry run is the default anyway.
+    env: { TEXTS_DRY_RUN: 'true' },
     // Child processes, so changing process.env.TZ inside a test really changes
     // the time zone (MSG-06).
     pool: 'forks'

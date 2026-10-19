@@ -473,3 +473,68 @@ Deno.test('ST-34 texts and bodies hold no phone, no other token, no place', asyn
     assert(!text.includes('Nonna'), `the swap place is not an allowed field: ${text}`)
   }
 })
+
+// ============================================================ more safety
+Deno.test('ST-35 junk TEXTS_DRY_RUN stays dry run even with links approved', async () => {
+  for (const v of ['yes', 'FALSE', '0', 'off', '']) {
+    const w = world()
+    const r = await call(w, { TEXTS_DRY_RUN: v, TEXT_LINKS_APPROVED: 'true', APP_BASE_URL: BASE }, { circle_id: w.C1, kind: 'invite' })
+    assertEquals(r.status, 200, `TEXTS_DRY_RUN=${JSON.stringify(v)}: ${JSON.stringify(r.json)}`)
+    assertEquals(w.provider.outbox.length, 0, `TEXTS_DRY_RUN=${JSON.stringify(v)} must never reach the provider`)
+    assertEquals(r.json?.dry_run, true)
+    assert(w.db.inserted.every(t => t.dry_run === true), 'every row is a dry-run row')
+  }
+})
+
+Deno.test('ST-36 Send invites with nobody left to invite: 200, sent 0, nothing sent', async () => {
+  const w = world()
+  for (const l of ['Ava', 'Ben', 'Cy']) seedText(w.db, l, { minutesAgo: 300 })
+  useUpCap(w) // an empty batch always fits (BUD-04)
+  const r = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'invite' })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  assertEquals(r.json?.sent, 0)
+  nothingHappened(w, 'nobody to invite')
+})
+
+Deno.test('ST-37 reveal: a member with no phone is skipped and reported, the rest are texted', async () => {
+  const w = world({ status: 'drawn', extra: [{ label: 'Dee', phone: null }] })
+  w.db.matches = w.db.matches.filter(m => m.giver_id !== memberId('Cy'))
+  w.db.matches.push({ circle_id: w.C1, giver_id: memberId('Cy'), receiver_id: memberId('Dee') })
+  w.db.matches.push({ circle_id: w.C1, giver_id: memberId('Dee'), receiver_id: memberId('Ava') })
+  const r = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'reveal' })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  assertEquals(w.db.status(w.C1), 'sent')
+  assertEquals(w.provider.outbox.length, 3)
+  assertEquals(result(r.json, 'Dee')?.status, 'skipped')
+  assertEquals(r.json?.skipped, 1)
+})
+
+Deno.test('ST-38 batch: a rate-limited member is skipped and reported; the others are texted', async () => {
+  const w = world()
+  for (let i = 0; i < 3; i++) seedText(w.db, 'Ava', { status: 'failed', minutesAgo: 10 })
+  const r = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'invite' })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  assertEquals(w.provider.outbox.map(s => s.phone).sort(), ['+15555550102', '+15555550103'])
+  assertEquals(result(r.json, 'Ava')?.status, 'skipped')
+  assertMatch(result(r.json, 'Ava')?.error ?? '', /too many texts/)
+})
+
+Deno.test('ST-39 invites are refused once the names are sent (Re-send then means the reveal)', async () => {
+  for (const body of [{ kind: 'invite' }, { kind: 'invite', member_id: memberId('Ava') }]) {
+    const w = world({ status: 'sent' })
+    const r = await call(w, ENV_REAL, { circle_id: w.C1, ...body })
+    assert4xx(r.status, JSON.stringify(body))
+    nothingHappened(w, `invite while sent ${JSON.stringify(body)}`)
+  }
+})
+
+Deno.test('ST-40 only index.ts touches Deno.env, fetch, supabase-js or Textbelt', async () => {
+  for (const file of ['./handler.ts', './core.ts', '../_shared/messages.js']) {
+    let src = ''
+    try { src = await Deno.readTextFile(new URL(file, import.meta.url)) } catch { throw new Error(`${file} isn't built yet`) }
+    assert(!/Deno\.env/.test(src), `${file} reads Deno.env`)
+    assert(!/\bfetch\s*\(/.test(src), `${file} calls fetch`)
+    assert(!/textbelt\.com/i.test(src), `${file} names textbelt.com`)
+    assert(!/createClient|supabase-js/.test(src), `${file} creates a supabase client`)
+  }
+})

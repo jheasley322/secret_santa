@@ -268,6 +268,8 @@ for the pure core. Changing one means changing its test in the same PR.
 |---|---|
 | `supabase/functions/_shared/messages.js` (plain JS, no imports; used by Deno and Node) | `memberLink(baseUrl, token)`, `inviteText({ name, circle, link })`, `revealText({ name, receiver, budget, swapDate, link })`. `budget` is a number or null. `swapDate` is `'YYYY-MM-DD'` or null. |
 | `supabase/functions/send-texts/core.ts` (pure, no imports except `../_shared/`) | `readSettings(env) → { dryRun, linksApproved, appBaseUrl }`, `budgetAllows({ texts, cap, batchSize }) → boolean`, `isRateLimited({ texts, memberId, now }) → boolean`, `pickRecipients({ kind, members, texts, memberId? }) → { send: Member[], skipped: { member_id, reason }[] }` |
+| `supabase/functions/send-texts/provider.ts` | `makeTextbeltProvider({ key, fetch }) → { send(phone, message) }`. The only code that knows Textbelt. `fetch` is injected so tests never touch the network. |
+| `public.text_budget_cap() returns int` (SQL, `security definer`) | How the Edge Function reads `private.text_budget.cap` through PostgREST. Executable by `service_role` only. |
 | `supabase/functions/send-texts/handler.ts` (no imports except `./core.ts` and `../_shared/`) | `handle(req: Request, deps) → Promise<Response>`. `deps = { db, provider, env, getUserId }`. `index.ts` is the only file that touches `Deno.env`, `Deno.serve`, supabase-js or `fetch`. |
 | `js/phone.js` | `normalizePhone(input) → string \| null` (E.164 or null) |
 | `js/escape.js` | `escapeHtml(value) → string` |
@@ -382,6 +384,25 @@ table, the circle's status, and what the fake provider actually received.
 | ST-32 | **Real rows:** `body` is null, `provider_id` is Textbelt's `textId`, `quota_remaining` is recorded, and `dry_run` is false. |
 | ST-33 | **Real message:** the provider receives the member's E.164 phone and the spec's invite text, ≤160 GSM-7 characters. |
 | ST-34 | **Only allowed fields:** no text or body contains any phone number, any token but the recipient's own, or the swap place. |
+| ST-35 | **Safety default:** junk `TEXTS_DRY_RUN` (`yes`, `FALSE`, `0`, `off`, `""`) is a dry run even with links approved. The provider is never called. |
+| ST-36 | **Batch:** Send invites when everyone already has an invite gives 200 with `sent: 0`, and nothing is sent, even at the cap (an empty batch always fits). |
+| ST-37 | **Reveal:** a member with no phone is skipped and reported, the circle still locks to `sent`, and everyone else is texted. |
+| ST-38 | **Batch rate limit:** in a whole-circle batch, a member who has hit 3 texts this hour is skipped and reported with `too many texts, try again in an hour`. The others are texted. *(Interpretation, see the open questions.)* |
+| ST-39 | **Invites after sent:** once the circle is `sent`, invite requests (batch or one member) are refused with 4xx, and nothing is sent. Re-send then means the reveal (spec *Re-send*). |
+| ST-40 | **Isolation:** `handler.ts`, `core.ts` and `messages.js` never read `Deno.env`, call `fetch`, name `textbelt.com` or create a supabase client. Only `index.ts` does. |
+
+### PROV: the Textbelt provider (`supabase/functions/send-texts/provider_test.ts`)
+
+Spec: *Texting* ("Swappable", "The API key ... never appears in the browser or the repo").
+Every test injects a fake `fetch`. The key is a fake string.
+
+| ID | Scenario |
+|---|---|
+| PROV-01 | One `POST https://textbelt.com/text` carrying `phone`, `message` and `key`. It returns `success`, `textId` and `quotaRemaining`. |
+| PROV-02 | A missing, empty or blank key never calls `fetch` and never reports success. |
+| PROV-03 | A Textbelt refusal (`success: false`) comes back with its error and quota. |
+| PROV-04 | An HTTP error, a non-JSON reply or a network error is never reported as success. |
+| PROV-05 | The key never appears in anything the provider returns or throws, even if Textbelt echoes it. |
 
 ### MSG: message builder (`tests/unit/messages.test.js`)
 
@@ -451,6 +472,9 @@ cap lives* and *Dry-run bodies*.
 | TXB-04 | Neither `anon` nor `authenticated` has any privilege on `private.text_budget` or usage on schema `private`. |
 | TXB-05 | A signed-in Elf selecting from `private.text_budget` gets "permission denied". |
 | TXB-06 | The Elf can read `body` on their own circle's texts but not on another Elf's. |
+| TXB-07 | A real row (`dry_run = false`) with a body is rejected. The body is for dry runs only. |
+| TXB-08 | `public.text_budget_cap()` is executable by `service_role` only, not by `anon` or `authenticated`. |
+| TXB-09 | `text_budget_cap()` returns the stored cap (after Joe changes it to 46, it returns 46). |
 
 ### E2E-ELF: the Elf pages (`tests/e2e/elf.spec.js`, Playwright)
 
@@ -468,6 +492,7 @@ Spec: *The flow* 1–5, *Circle details*, *Re-send*, *Progress*, *Pages*, *Priva
 | E2E-ELF-08 | `/` lists the Elf's own circles, and Elf B's circle isn't among them. |
 | E2E-ELF-09 | **Unhappy:** an invalid phone (`555-0101`, `call me`) gives an inline error on the mobile field (`aria-invalid="true"` plus a non-empty accessible description), and no member is added. |
 | E2E-ELF-10 | **Unhappy:** Elf A opening Elf B's `circle.html?id=…` sees a "not found" message and none of B's circle name, member names or phones. |
+| E2E-ELF-11 | The circle page at 375px wide has no horizontal scroll. |
 
 UI contract the e2e relies on (taken from the approved mock in `design/preview.html` and the
 spec wording):
@@ -481,12 +506,17 @@ spec wording):
 - The session lives in supabase-js's default storage (localStorage key
   `sb-hnnzoiuibnikrucncphu-auth-token`). e2e signs in by placing a real session there.
 
-How e2e gets an Elf session without the service-role key: global setup uses `SUPABASE_DB_URL`
-to insert two confirmed users (`…@secret-santa-e2e.invalid`, random one-run password) into
-`auth.users` and `auth.identities`. It signs them in with `signInWithPassword` using the
-publishable key and saves each session as Playwright storage state in `tests/e2e/.auth/`
-(gitignored). Setup and teardown both sweep circles named `[e2e]%`, then e2e users who own
-nothing else.
+How e2e gets an Elf session without the service-role key: Joe creates two test Elf accounts
+once, by hand, in the Supabase dashboard (Authentication, then Add user, with auto-confirm on).
+Their emails end in `@secret-santa-e2e.invalid`. Their credentials come from the environment as
+`E2E_ELF_A_EMAIL`, `E2E_ELF_A_PASSWORD`, `E2E_ELF_B_EMAIL` and `E2E_ELF_B_PASSWORD`, read by name
+only. Global setup signs each one in with `signInWithPassword` and the publishable key, and
+saves the session as Playwright storage state in `tests/e2e/.auth/` (gitignored). The suite never
+creates or deletes auth users. Setup and teardown sweep only circles named `[e2e]%`.
+
+The `send-texts` stub (`tests/e2e/support/fixtures.mjs`) records each request the page made,
+so E2E-ELF-04 and 07 assert on the exact body and the `Bearer` header. It answers in the spec's
+response shape and writes `dry_run = true` rows.
 
 ### Open questions for Joe (tests currently take the reading shown)
 
@@ -501,9 +531,13 @@ nothing else.
 5. **Whole-circle reveal while `sent`, and one-member reveal while `drawn`,** have no error
    text in the spec. The tests require only a 4xx with nothing sent.
 6. **Quota at or below 5** reuses `text budget used up` (the spec lists no other text).
-7. **How does the Edge Function read `private.text_budget`?** It's not exposed through
-   PostgREST and has "no client grants". backend-engineer needs either a service-role-only
-   function or a direct Postgres connection.
+7. **How does the Edge Function read `private.text_budget`?** Answered in the contract:
+   `public.text_budget_cap()`, a SECURITY DEFINER function executable by `service_role` only
+   (TXB-08, TXB-09).
+8. **A rate-limited member in a whole-circle batch** is skipped and reported, and the rest of
+   the batch goes (ST-38). A one-member Re-send gets the request-level refusal (ST-14, ST-24).
+9. **Invites after `sent`** are refused (ST-39). The spec says Re-send means the reveal then,
+   but it gives no error text, so the tests require only a 4xx.
 
 ---
 
@@ -517,7 +551,7 @@ These come from the agent brief and the spec, and they get written at the start 
 | Playwright | Member happy path: open link, fill list, I'm done, "You drew" after the draw | *The flow* 4 and 8 | 3, 4 | `tests/e2e/member.spec.js` |
 | Playwright | A member edits the URL fragment to another token | *Privacy rules* | 3 | `tests/e2e/unhappy.spec.js` |
 | Playwright | The Elf tries to shuffle after sending ("Names have already been sent.") | *Reshuffle* | 4 | `tests/e2e/unhappy.spec.js` |
-| Playwright | 375px wide, no horizontal scroll | master plan phase 5 | 5 | `tests/e2e/layout.spec.js` |
+| Playwright | 375px wide, no horizontal scroll on the member page (the Elf circle page is E2E-ELF-11) | master plan phase 5 | 5 | `tests/e2e/layout.spec.js` |
 
 ---
 
@@ -535,7 +569,7 @@ Setup, once:
 | pgTAP | `npm run test:sql` (`npm run test:sql -- draw` runs only files whose name contains `draw`) | `SUPABASE_DB_URL` |
 | Vitest | `npm run test:unit` | nothing |
 | Deno | `npm run test:deno` | `deno` 2.x on the PATH. Runs with net, env, write and run denied. |
-| Playwright | `npm run test:e2e` | `SUPABASE_DB_URL`, the publishable key (`SUPABASE_PUBLISHABLE_KEY`, or read from `js/supabaseClient.js`), Chromium (`npx playwright install chromium`, once) |
+| Playwright | `npm run test:e2e` | `SUPABASE_DB_URL`, the publishable key (`SUPABASE_PUBLISHABLE_KEY`, or read from `js/supabaseClient.js`), the four `E2E_ELF_*` credentials, Chromium (`npx playwright install chromium`, once). `TEXTS_DRY_RUN=true` is forced by `playwright.config.js`. |
 
 **pgTAP safety.** The runner opens a transaction around each file and **always rolls it back**,
 so the suite leaves the live database unchanged. Each file also starts with `begin;` and ends
@@ -545,8 +579,8 @@ ROLLBACK, BEGIN…). pgTAP must be installed in the `extensions` schema. The run
 `public, extensions` on the `search_path`.
 
 **Playwright writes are real** (to project `hnnzoiuibnikrucncphu`), and global setup refuses
-any other project. Every circle is named `[e2e] …`, and every user email ends
-`@secret-santa-e2e.invalid`. Global setup and teardown sweep both, and each spec file's
+any other project. Every circle is named `[e2e] …`, and both test Elf emails end
+`@secret-santa-e2e.invalid`. Global setup and teardown sweep the circles, and each spec file's
 `afterAll` deletes its own `[e2e]` circles. Nothing is ever deleted by any other key. The
 site is served by `tests/e2e/support/static-server.mjs` on `127.0.0.1:8787`, which refuses
 dotfiles and the `supabase/`, `tests/`, `node_modules/` and `.zReference/` folders.
