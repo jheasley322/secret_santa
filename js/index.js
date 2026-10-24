@@ -56,7 +56,7 @@ $('sign-in').addEventListener('submit', e => {
     try {
       await sendMagicLink(email)
       clearNotices()
-      notify('ok', `Check your email. We sent a sign-in link to ${email}.`)
+      notify('ok', `Check your email. If ${email} belongs to an Elf, a sign-in link is on its way.`)
     } catch {
       notify('bad', "Couldn't send the sign-in link. Wait a minute and try again.")
     }
@@ -71,12 +71,14 @@ $('create-circle').addEventListener('submit', e => {
   if (!name.value.trim()) { fieldError(name, 'Give the circle a name.'); ok = false } else fieldError(name, null)
   const b = budget.value.trim()
   if (b !== '' && !/^\d+$/.test(b)) { fieldError(budget, 'Use whole dollars, like 20.'); ok = false } else fieldError(budget, null)
+  const date = $('c-date')
+  if (!date.value) { fieldError(date, 'Pick the swap date.'); ok = false } else fieldError(date, null)
   if (!ok) return
   busy(e.submitter ?? e.target.querySelector('button'), async () => {
     const row = {
       name: name.value.trim(),
       budget: b === '' ? null : Number(b),
-      swap_date: $('c-date').value || null,
+      swap_date: $('c-date').value,
       swap_place: $('c-place').value.trim() || null
     }
     const { data, error } = await supabase.from('circles').insert(row).select('id').single()

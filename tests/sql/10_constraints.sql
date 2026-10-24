@@ -2,7 +2,7 @@
 -- 10 -- Table constraints
 -- ===========================================================================
 -- Spec: "Interface contract -> Constraints", "Data model".
--- Scenarios CON-01..19 in tests/SCENARIOS.md.
+-- Scenarios CON-01..22 in tests/SCENARIOS.md.
 --
 -- Everything here runs as the setup role, because constraints bind every
 -- role. pg_temp.outcome() runs a statement, always undoes it, and reports
@@ -11,7 +11,7 @@
 begin;
 -- \include tests/fixtures/sql/fixtures.sql
 
-select plan(48);
+select plan(56);
 
 select pg_temp.mk_elf('elf');
 select pg_temp.mk_circle('C1', 'elf');
@@ -21,39 +21,39 @@ select pg_temp.mk_member('Wes', 'C2');
 
 -- CON-01 first_name length ----------------------------------------------------
 select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
-                            values (pg_temp.id('C1'), repeat('a', 40), null)$$),
+                            values (pg_temp.id('C1'), repeat('a', 40), '+15555550150')$$),
           'accepted', 'CON-01 a 40-character first name is accepted');
 select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
-                            values (pg_temp.id('C1'), repeat('a', 41), null)$$),
+                            values (pg_temp.id('C1'), repeat('a', 41), '+15555550150')$$),
           'rejected', 'CON-01 a 41-character first name is rejected');
 
 -- CON-02 empty names ----------------------------------------------------------
 select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
-                            values (pg_temp.id('C1'), '', null)$$),
+                            values (pg_temp.id('C1'), '', '+15555550150')$$),
           'rejected', 'CON-02 an empty first name is rejected');
 select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
-                            values (pg_temp.id('C1'), '    ', null)$$),
+                            values (pg_temp.id('C1'), '    ', '+15555550150')$$),
           'rejected', 'CON-02 a whitespace-only first name is rejected');
 select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
-                            values (pg_temp.id('C1'), null, null)$$),
+                            values (pg_temp.id('C1'), null, '+15555550150')$$),
           'rejected', 'CON-02 a null first name is rejected');
 
 -- CON-03 trimmed: either trimmed on save or rejected, never stored padded ------
 select pg_temp.try($$insert into public.members (circle_id, first_name, phone)
-                     values (pg_temp.id('C1'), '  Padded  ', null)$$);
+                     values (pg_temp.id('C1'), '  Padded  ', '+15555550150')$$);
 select is((select count(*) from public.members
             where circle_id = pg_temp.id('C1') and first_name <> btrim(first_name)),
           0::bigint, 'CON-03 no first name is stored with leading or trailing spaces');
 
 -- CON-04 / 05 uniqueness ------------------------------------------------------
 select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
-                            values (pg_temp.id('C1'), 'maya', null)$$),
+                            values (pg_temp.id('C1'), 'maya', '+15555550150')$$),
           'rejected', 'CON-04 "maya" is rejected when "Maya" is already in the circle');
 select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
-                            values (pg_temp.id('C1'), 'MAYA', null)$$),
+                            values (pg_temp.id('C1'), 'MAYA', '+15555550150')$$),
           'rejected', 'CON-04 "MAYA" is rejected too');
 select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
-                            values (pg_temp.id('C2'), 'Maya', null)$$),
+                            values (pg_temp.id('C2'), 'Maya', '+15555550150')$$),
           'accepted', 'CON-05 the same first name is fine in another circle');
 
 -- CON-06 / 07 phone -----------------------------------------------------------
@@ -96,8 +96,10 @@ select is(pg_temp.outcome($$update public.circles set status = null where id = p
 -- CON-10 tokens ---------------------------------------------------------------
 select is((select count(*) from public.members
             where circle_id in (pg_temp.id('C1'), pg_temp.id('C2'))
-              and (token is null or token !~ '^[A-Za-z0-9_-]{43}$')),
-          0::bigint, 'CON-10 every member gets a 43-character base64url token (32 random bytes)');
+              and (token is null or token !~ '^[A-Za-z0-9_-]{16}$')),
+          0::bigint, 'CON-10 every member gets a 16-character base64url token (12 random bytes; spec: shorter links)');
+select is((select count(*) from public.members where token !~ '^[A-Za-z0-9_-]{16}$'),
+          0::bigint, 'CON-10b no member anywhere still has an old-length token (existing members were reissued)');
 select is((select count(distinct token) from public.members
             where circle_id in (pg_temp.id('C1'), pg_temp.id('C2'))),
           (select count(*) from public.members
@@ -107,7 +109,7 @@ select is(pg_temp.outcome($$update public.members set token = pg_temp.tok('Ben')
           'rejected', 'CON-10 a duplicate token is rejected');
 
 -- CON-11 list_done default ----------------------------------------------------
-insert into public.members (circle_id, first_name, phone) values (pg_temp.id('C1'), 'Defaulty', null);
+insert into public.members (circle_id, first_name, phone) values (pg_temp.id('C1'), 'Defaulty', '+15555550151');
 select is((select list_done from public.members
             where circle_id = pg_temp.id('C1') and first_name = 'Defaulty'),
           false, 'CON-11 list_done defaults to false');
@@ -191,6 +193,34 @@ select is(pg_temp.outcome($$insert into public.texts (member_id, kind, status, c
 select is(pg_temp.outcome($$insert into public.texts (member_id, kind, status, created_at)
                             values (pg_temp.id('Maya'), 'reveal', 'delivered', now())$$),
           'rejected', 'CON-19 a text status other than sent/failed is rejected');
+
+-- CON-20 phones are US only (spec "Security hardening" S2) ---------------------
+select is(pg_temp.outcome($$update public.members set phone = '+442079460958' where id = pg_temp.id('Maya')$$),
+          'rejected', 'CON-20 a UK number (+44) is rejected: phones are US only');
+select is(pg_temp.outcome($$update public.members set phone = '+33612345678' where id = pg_temp.id('Maya')$$),
+          'rejected', 'CON-20 a French number (+33) is rejected: phones are US only');
+select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
+                            values (pg_temp.id('C1'), 'Intl', '+5215555550142')$$),
+          'rejected', 'CON-20 a +52 number is rejected when adding a member');
+
+-- CON-21 a phone is required when a member is added (Joe, Decision 5) ----------
+-- Null stays legal on UPDATE (CON-06), because erase_old_phones() nulls it.
+select is(pg_temp.outcome($$insert into public.members (circle_id, first_name, phone)
+                            values (pg_temp.id('C1'), 'Nophone', null)$$),
+          'rejected', 'CON-21 adding a member with a null phone is rejected');
+select is(pg_temp.outcome($$insert into public.members (circle_id, first_name)
+                            values (pg_temp.id('C1'), 'Nophone')$$),
+          'rejected', 'CON-21 adding a member without giving a phone is rejected');
+select pg_temp.act_as('elf');
+select is(pg_temp.outcome($$insert into public.members (circle_id, first_name)
+                            values (pg_temp.id('C1'), 'Nophone')$$),
+          'rejected', 'CON-21 the Elf adding a member without a phone is rejected');
+select pg_temp.as_postgres();
+
+-- CON-22 pending text rows (spec "Security hardening" S3) ----------------------
+select is(pg_temp.outcome($$insert into public.texts (member_id, kind, status, dry_run, created_at)
+                            values (pg_temp.id('Maya'), 'invite', 'pending', false, now())$$),
+          'accepted', 'CON-22 a pending text row is accepted');
 
 select * from finish();
 rollback;

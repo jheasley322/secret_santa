@@ -11,7 +11,7 @@ export const SUPABASE_URL = 'https://hnnzoiuibnikrucncphu.supabase.co'
 
 // >>> Joe: paste the project's publishable key here (Dashboard -> Project
 // Settings -> API Keys -> Publishable key). It starts with "sb_publishable_".
-export const SUPABASE_PUBLISHABLE_KEY = 'PASTE_PUBLISHABLE_KEY_HERE'
+export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_lSHcxZycDPN82SacwBRaAQ_D6RbVZHE'
 
 /** Base of every member link: {APP_BASE_URL}/m/#<token>. Same value as the Edge Function's APP_BASE_URL. */
 export const APP_BASE_URL = 'https://jheasley322.github.io/secret_santa'

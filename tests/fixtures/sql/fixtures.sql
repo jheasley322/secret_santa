@@ -196,12 +196,18 @@ declare
   v uuid;
   t text;
 begin
+  -- A phone is required when a member is added (Joe, Decision 5), so a member
+  -- with no phone (p_phone => null) is added with one and then has it erased,
+  -- which is the only way a real member ends up without a number.
   insert into public.members (circle_id, first_name, phone, list_done)
   values (pg_temp.id(p_circle_label),
           coalesce(p_first_name, p_label),
-          case when p_phone = 'auto' then pg_temp.fake_phone() else p_phone end,
+          case when p_phone = 'auto' or p_phone is null then pg_temp.fake_phone() else p_phone end,
           p_done)
   returning id, token into v, t;
+  if p_phone is null then
+    update public.members set phone = null where id = v;
+  end if;
   insert into pg_temp.t_tok (label, token) values (p_label, t)
     on conflict (label) do update set token = excluded.token;
   return pg_temp.remember(p_label, v);
@@ -278,6 +284,46 @@ end $fx$;
 -- --------------------------------------------------------------------------
 -- Observers. Call as postgres.
 -- --------------------------------------------------------------------------
+
+-- The lifetime count of claimed real texts (spec "Security hardening" S1).
+create function pg_temp.budget_used() returns int
+language plpgsql as $fx$
+declare v int;
+begin
+  execute 'select used from private.text_budget' into v;
+  return v;
+end $fx$;
+
+-- The lock modes this transaction holds on one row, e.g. 'For Update', or ''
+-- if none. Row locks are not listed in pg_locks unless someone waits, so this
+-- reads them with pgrowlocks (a contrib extension; the calling test file
+-- creates it inside its own rolled-back transaction). Call as postgres.
+-- No pid filter: a lock taken inside a subtransaction (any plpgsql exception
+-- block, e.g. pg_temp.svc) is stamped with the subtransaction's xid, and
+-- pgrowlocks reports pid 0 for it. Filtering on pg_backend_pid() hid real
+-- locks. The rows tested here are created in this uncommitted transaction, so
+-- no other session can see them, let alone lock them.
+create function pg_temp.row_lock_modes(p_table regclass, p_id uuid) returns text
+language plpgsql as $fx$
+declare v text;
+begin
+  execute format(
+    $q$select coalesce(string_agg(m, ',' order by m), '')
+         from %s t, extensions.pgrowlocks(%L) l, unnest(l.modes) m
+        where t.id = $1 and l.locked_row = t.ctid$q$,
+    p_table, p_table::text) into v using p_id;
+  return coalesce(v, '');
+end $fx$;
+
+-- Does this transaction hold a lock on the row that serialises writers
+-- (FOR UPDATE / FOR NO KEY UPDATE, or an UPDATE)? FOR KEY SHARE and FOR SHARE
+-- don't count: two claimers holding them would not wait for each other.
+-- Note: inserting a member takes FOR KEY SHARE on its circle (the foreign key).
+create function pg_temp.row_locked_for_write(p_table regclass, p_id uuid) returns boolean
+language plpgsql as $fx$
+begin
+  return pg_temp.row_lock_modes(p_table, p_id) ~ '(For Update|For No Key Update|(^|,)Update|No Key Update)';
+end $fx$;
 
 -- Run a statement as the current role; report 'succeeded' or the error, never
 -- raise. Used for "not client-writable" checks, where the spec fixes the

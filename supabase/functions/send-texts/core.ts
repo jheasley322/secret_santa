@@ -57,20 +57,20 @@ export function readSettings (env: Record<string, string | undefined>): Settings
 const time = (t: TextRow) => Date.parse(t.created_at)
 
 /**
- * spec HARD LIMITS 1. A batch fits only if every real row so far (failed ones
- * included, every circle) plus the batch stays within the cap, and the latest
- * recorded quotaRemaining is above the reserve. Dry-run rows never count.
+ * spec HARD LIMITS 1 and "Security hardening" S1. The read-only pre-check, from
+ * the lifetime counter in private.text_budget (never from texts rows, which can
+ * be deleted): the whole batch must fit under the cap, and the last recorded
+ * quotaRemaining must be above the reserve. An empty batch always fits. The real
+ * gate is the database claim (claim_texts), made under the circle lock.
  */
-export function budgetAllows ({ texts, cap, batchSize }: { texts: TextRow[]; cap: number; batchSize: number }): boolean {
+export function budgetAllows (
+  { used, cap, lastQuota, batchSize }: { used: number; cap: number; lastQuota: number | null; batchSize: number }
+): boolean {
   if (batchSize <= 0) return true
-  const real = texts.filter(t => t.dry_run === false)
-  if (real.length + batchSize > cap) return false
-  let latest: TextRow | null = null
-  for (const t of real) {
-    if (typeof t.quota_remaining !== 'number') continue
-    if (!latest || time(t) > time(latest)) latest = t
-  }
-  return !(latest && (latest.quota_remaining as number) <= RESERVE)
+  // Anything unreadable fails closed.
+  if (!Number.isFinite(used) || !Number.isFinite(cap)) return false
+  if (used + batchSize > cap) return false
+  return lastQuota === null || lastQuota === undefined || lastQuota > RESERVE
 }
 
 /** spec "Re-send": the next text would be the 4th to this member within an hour. Every row counts. */
@@ -83,7 +83,8 @@ export interface Skip { member_id: string; reason: string }
 
 /**
  * spec "Who gets texted". One member: just them (Re-send is explicit). Invite
- * batch: members without a successful real invite. Reveal batch: everyone.
+ * batch: members without a successful (or in-flight, S3) real invite; dry-run
+ * invites never count (Decision 1). Reveal batch: everyone.
  * No phone: skipped and reported, never an error.
  */
 export function pickRecipients (
@@ -92,7 +93,7 @@ export function pickRecipients (
   const send: Member[] = []
   const skipped: Skip[] = []
   const invited = new Set(
-    texts.filter(t => t.kind === 'invite' && t.status === 'sent' && t.dry_run === false).map(t => t.member_id)
+    texts.filter(t => t.kind === 'invite' && (t.status === 'sent' || t.status === 'pending') && t.dry_run === false).map(t => t.member_id)
   )
   const pool = memberId ? members.filter(m => m.id === memberId) : members
   for (const m of pool) {

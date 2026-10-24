@@ -95,3 +95,14 @@ Deno.test('PROV-05 the key never appears in what the provider returns', async ()
     assert(!out.includes(FAKE_KEY), `the key leaked: ${out}`)
   }
 })
+
+Deno.test('PROV-06 the provider says whether it is configured (spec S4), without revealing the key', async () => {
+  const { makeTextbeltProvider } = await load('./provider.ts')
+  const noFetch = () => { throw new Error('fetch must not be called') }
+  for (const key of [undefined, '', '   ']) {
+    assertEquals(makeTextbeltProvider({ key, fetch: noFetch }).configured, false, `key ${JSON.stringify(key)}`)
+  }
+  const p = makeTextbeltProvider({ key: 'fake-key-for-tests', fetch: noFetch })
+  assertEquals(p.configured, true)
+  assert(!JSON.stringify(p).includes('fake-key-for-tests'), 'the key is not exposed on the provider object')
+})

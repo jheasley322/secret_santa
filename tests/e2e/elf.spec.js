@@ -54,6 +54,22 @@ test.describe('signed out', () => {
     await expect(page.getByText(/check your email/i)).toBeVisible()
     expect(otpCalls).toBe(1)
   })
+
+  // spec "Security hardening" S2: sign-ups are off, and the client asks for a
+  // link only for an existing Elf. supabase-js sends shouldCreateUser: false
+  // as create_user: false in the OTP request body.
+  test('E2E-ELF-12 the sign-in request never creates an account (shouldCreateUser: false)', async ({ page }) => {
+    const bodies = []
+    await page.route('**/auth/v1/otp**', route => {
+      bodies.push(route.request().postDataJSON())
+      return route.fulfill({ status: 200, json: {} })
+    })
+    await page.goto('/index.html')
+    await page.getByLabel(/email/i).fill(`nobody@${'secret-santa-e2e.invalid'}`)
+    await page.getByRole('button', { name: /sign-in link|sign in/i }).click()
+    await expect.poll(() => bodies.length).toBe(1)
+    expect(bodies[0].create_user).toBe(false)
+  })
 })
 
 // ------------------------------------------------------------------ Elf A
@@ -161,6 +177,33 @@ test.describe('Elf A', () => {
     const n = await withDb(async db => (await db.query(
       "select count(*)::int as n from public.members where circle_id = $1 and first_name = 'Dot'", [circleId])).rows[0].n)
     expect(n).toBe(0)
+  })
+
+  // Joe, Decision 5: a phone number is required when adding a member.
+  test('E2E-ELF-13 adding a kid with no phone number shows an inline error and adds nobody', async ({ page }) => {
+    await page.goto(`/circle.html?id=${circleId}`)
+    await page.getByLabel(/first name/i).fill('Nell')
+    const phone = page.getByLabel(/mobile/i)
+    await phone.fill('')
+    await page.getByRole('button', { name: /^add$/i }).click()
+    await expect.poll(() => phone.evaluate(el => el.matches(':invalid') || el.getAttribute('aria-invalid') === 'true')).toBe(true)
+    await expect(row(page, 'Nell')).toHaveCount(0)
+    const n = await withDb(async db => (await db.query(
+      "select count(*)::int as n from public.members where circle_id = $1 and first_name = 'Nell'", [circleId])).rows[0].n)
+    expect(n).toBe(0)
+  })
+
+  // Joe, Decision 7: every circle must have a swap date.
+  test('E2E-ELF-14 creating a circle without a swap date is refused and creates nothing', async ({ page }) => {
+    const noDate = `${E2E_PREFIX} no date ${Date.now()}`
+    await page.goto('/index.html')
+    await page.getByLabel(/circle name/i).fill(noDate)
+    const date = page.getByLabel(/swap date/i)
+    await date.fill('')
+    await page.getByRole('button', { name: 'Create circle' }).click()
+    await expect.poll(() => date.evaluate(el => el.matches(':invalid') || el.getAttribute('aria-invalid') === 'true')).toBe(true)
+    await expect(page).not.toHaveURL(/circle\.html/)
+    expect(await circleIdByName(noDate)).toBeUndefined()
   })
 
   test('E2E-ELF-10 Elf B\'s circle page shows "not found" and none of its data', async ({ page }) => {

@@ -106,7 +106,7 @@ circles
   elf_id        uuid → auth.users        -- owner
   name          text
   budget        int  (dollars, nullable)
-  swap_date     date (nullable)
+  swap_date     date not null              -- required (Joe, 2026-10-24); the Elf can change it any time
   swap_place    text (nullable)
   status        text  'open' | 'drawn' | 'sent'
   created_at    timestamptz
@@ -116,7 +116,7 @@ members
   circle_id     uuid → circles
   first_name    text
   phone         text  (E.164, e.g. +15551234567; erased 7 days after swap_date)
-  token         text unique              -- 32 random bytes, base64url
+  token         text unique              -- 12 random bytes (96 bits), base64url = exactly 16 chars, no padding (Joe, 2026-10-24: shorter links)
   fav_color     text
   fav_snack     text
   sizes         text
@@ -274,7 +274,7 @@ may buy more later, up to about 700 in total.
 - **No agent ever sends a real text.** Joe sends real texts himself. The only real texts during
   development are ones Joe explicitly asks for, one at a time, to his own phone.
 
-**2. No texts containing links until Joe says the Textbelt URL whitelist is approved.**
+**2. No texts containing links until Joe says the Textbelt URL whitelist is approved.** **Joe confirmed the approval on 2026-10-24**, so `TEXT_LINKS_APPROVED=true` may be set at deploy. Real sends still happen only when Joe triggers them.
 - A setting, `TEXT_LINKS_APPROVED`, defaults to **false**. Only Joe flips it.
 - While it's false, any real send whose message contains a URL is refused **before** calling
   the provider, with `links not approved yet`, and doesn't count against the cap. Dry runs can
@@ -327,6 +327,69 @@ tests and the Elf can see exactly what would have been sent. It stays null for r
   - `names have not been drawn yet` (a reveal before `drawn`)
 - **Order of checks:** auth and ownership, then status, then cap (the whole batch must fit),
   then the links gate, then the per-member rate limit, then send.
+
+**Decisions from Joe (2026-10-24):**
+1. **Dry-run invites don't count as "already invited".** The first real Send invites still
+   texts everyone.
+2. **Dry-run sends count toward the 3-per-member-per-hour rate limit**, but never toward the
+   credit cap.
+3. **In a batch, a rate-limited member is skipped** (`skipped`) and the rest still send.
+4. **Reveal wording is approved:** `Secret Santa! Maya, you drew Ava! $20, Dec 19. Their list: <link>`
+5. **A phone number is required** when adding a member. A kid without a phone uses a parent's
+   number.
+6. **Concurrent sends must not get past the cap.** Two simultaneous `send-texts` calls for any
+   circle must be serialised in the database, so the cap check and the reservation of the
+   batch's slots are atomic. The worst case must be zero over-spend, not "one extra batch".
+7. **Every circle must have a swap date.** It's required when the circle is created, and the
+   Elf can change it later in any status. This means every phone number is eventually erased.
+8. **Help pages point people to "ask your Elf"**, never a named person.
+
+**Security hardening (from the audit, 2026-10-24; lead decisions):**
+- **S1. A lifetime counter that deletes can't reset.** `private.text_budget` gains
+  `used int not null default 0` and `last_quota int`. Every real send is claimed **before**
+  calling the provider, through `public.claim_text_credits(p_circle_id uuid, p_n int)`
+  (service_role only). In one transaction, it:
+  - locks the circle row,
+  - re-checks the cap (`used + n <= cap`) and the reserve (`last_quota` is null or `> 5`),
+  - increments `used`.
+  Deleting circles, members or texts never lowers `used`. Claimed-but-unsent credits stay
+  counted (fail closed). `last_quota` is written after each real send through a service-role
+  RPC. This replaces counting `texts` rows for the cap.
+- **S2. Only approved Elves.**
+  - Supabase Auth sign-ups are disabled (Joe, in the dashboard), and the client uses
+    `shouldCreateUser: false`.
+  - `send-texts` also checks an `ELF_USER_IDS` allow-list (an Edge secret) straight after
+    verifying the JWT and before any service-role client. Anyone not on the list gets
+    `circle not found`.
+  - Phone numbers are **US only** (`+1`) at the DB check.
+- **S3. Serialise per circle.** The duplicate-invite filter and the 3-per-hour rate limit are
+  re-checked under the same circle lock as S1. `pending` text rows are inserted in that
+  transaction and updated to `sent`/`failed` after the provider call, so parallel requests
+  can't double-text a kid.
+- **S4.** The "texting is not set up" check moves after the auth check.
+- **S5.** Revoke execute on `public.rls_auto_enable()` from public, anon and authenticated.
+- **S6. Practice mode is loud.** The Phase 4 UI shows a "Practice mode: no real texts" banner
+  whenever dry run is on, and confirms before a dry-run Send the names locks the draw.
+
+**Lead decisions on the S1–S3 contract (2026-10-24; full contract in tests/SCENARIOS.md under CLM, CT and RLSA):**
+- Use `claim_texts(p_circle_id, p_kind, p_member_ids, p_dry_run, p_resend) returns jsonb` plus
+  `claim_text_credits` and `record_text_quota`. All three are service_role only.
+- Inside `claim_texts`, lock the circle with `FOR UPDATE` as its own statement, then read.
+- **A whole-circle reveal moves `drawn → sent` inside `claim_texts`**, atomically with the
+  claim, so a losing concurrent reveal claims nothing.
+- Phone is required on insert (BEFORE INSERT trigger, `phone number required`). The Elf
+  (`authenticated`) also can't update a phone to null. Only erasure (postgres or service_role)
+  can null it.
+- **US phones:** `^\+1[0-9]{10}$`.
+- A missing or empty `ELF_USER_IDS` lets nobody in.
+- **Shorter links (Joe, 2026-10-24):**
+  - Member tokens are 16 base64url characters (12 random bytes, 96 bits).
+  - Existing members get new 16-character tokens in the same migration. That's safe while
+    nobody has been texted; after real texts go out, tokens must never be reissued.
+  - The link becomes `https://jheasley322.github.io/secret_santa/m/#<16 chars>`, about 61
+    characters.
+- Claimed but unsent `pending` rows end as `failed`, which keeps them counted. If writing a log
+  row fails, **stop the batch** (fail closed) and report an error.
 
 
 ---

@@ -56,7 +56,7 @@ select is(pg_temp.draw_sig('S'), pg_temp.val('sig1'), 'STAT-02 ... and the match
 
 -- LOCK-02..04 drawn: frozen ---------------------------------------------------
 select pg_temp.act_as('elf');
-select throws_ok($$insert into public.members (circle_id, first_name) values (pg_temp.id('S'), 'Late')$$,
+select throws_ok($$insert into public.members (circle_id, first_name, phone) values (pg_temp.id('S'), 'Late', '+15555550161')$$,
                  null, 'circle is locked after the draw', 'LOCK-02 drawn: adding a member is refused');
 select throws_ok($$delete from public.members where id = pg_temp.id('Dee')$$,
                  null, 'circle is locked after the draw', 'LOCK-03 drawn: removing a member is refused');
@@ -115,7 +115,7 @@ select throws_ok($$select public.start_draw(pg_temp.id('S'))$$, null, 'names hav
                  'STAT-02 start_draw after sending says names have already been drawn');
 
 -- LOCK-05 sent: frozen --------------------------------------------------------
-select throws_ok($$insert into public.members (circle_id, first_name) values (pg_temp.id('S'), 'Later')$$,
+select throws_ok($$insert into public.members (circle_id, first_name, phone) values (pg_temp.id('S'), 'Later', '+15555550162')$$,
                  null, 'circle is locked after the draw', 'LOCK-05 sent: adding a member is refused');
 select throws_ok($$delete from public.members where id = pg_temp.id('Dee')$$,
                  null, 'circle is locked after the draw', 'LOCK-05 sent: removing a member is refused');

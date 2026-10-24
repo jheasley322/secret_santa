@@ -49,54 +49,47 @@ Deno.test('SET-04 APP_BASE_URL is the base for links', async () => {
 })
 
 // ---------------------------------------------------------------- BUD
-Deno.test('BUD-01 the cap counts real rows of every status, across circles', async () => {
+// Revised 2026-10-24 for spec "Security hardening" S1: the cap and reserve are
+// read from private.text_budget (used, cap, last_quota), not by counting texts
+// rows. budgetAllows is the handler's read-only pre-check (it keeps "cap before
+// links" in the order of checks); the database's claim is the real gate.
+Deno.test('BUD-01 the cap is used + batch <= cap, from the counter', async () => {
   const { budgetAllows } = await core()
-  const texts = [...rows(40), ...rows(4, { status: 'failed' }), ...rows(1, { member_id: memberId('Zed'), kind: 'reveal' })] // 45 real
-  assertEquals(budgetAllows({ texts, cap: 45, batchSize: 1 }), false, '45 used (4 failed) + 1 > 45')
-  assertEquals(budgetAllows({ texts: texts.slice(1), cap: 45, batchSize: 1 }), true, '44 used + 1 = 45')
+  assertEquals(budgetAllows({ used: 44, cap: 45, lastQuota: null, batchSize: 1 }), true, '44 + 1 = 45')
+  assertEquals(budgetAllows({ used: 45, cap: 45, lastQuota: null, batchSize: 1 }), false, '45 + 1 > 45')
 })
 
-Deno.test('BUD-02 dry-run rows never count', async () => {
+Deno.test('BUD-02 the texts table is not an input (deleted rows cannot reset the cap)', async () => {
   const { budgetAllows } = await core()
-  const texts = [...rows(44), ...rows(500, { dry_run: true }), ...rows(50, { dry_run: true, status: 'failed' })]
-  assertEquals(budgetAllows({ texts, cap: 45, batchSize: 1 }), true)
+  // A caller passing an empty texts list alongside a full counter is still refused.
+  assertEquals(budgetAllows({ used: 45, cap: 45, lastQuota: null, batchSize: 1, texts: [] } as any), false)
 })
 
-Deno.test('BUD-03 the whole batch must fit: used + batch <= cap', async () => {
+Deno.test('BUD-03 the whole batch must fit', async () => {
   const { budgetAllows } = await core()
-  const texts = rows(40)
-  assertEquals(budgetAllows({ texts, cap: 45, batchSize: 5 }), true, '40 + 5 = 45')
-  assertEquals(budgetAllows({ texts, cap: 45, batchSize: 6 }), false, '40 + 6 > 45')
+  assertEquals(budgetAllows({ used: 40, cap: 45, lastQuota: null, batchSize: 5 }), true, '40 + 5 = 45')
+  assertEquals(budgetAllows({ used: 40, cap: 45, lastQuota: null, batchSize: 6 }), false, '40 + 6 > 45')
 })
 
 Deno.test('BUD-04 at the cap a single text is refused; an empty batch is allowed', async () => {
   const { budgetAllows } = await core()
-  assertEquals(budgetAllows({ texts: rows(45), cap: 45, batchSize: 1 }), false)
-  assertEquals(budgetAllows({ texts: rows(45), cap: 45, batchSize: 0 }), true)
-  assertEquals(budgetAllows({ texts: [], cap: 45, batchSize: 45 }), true)
-  assertEquals(budgetAllows({ texts: [], cap: 45, batchSize: 46 }), false)
+  assertEquals(budgetAllows({ used: 45, cap: 45, lastQuota: null, batchSize: 1 }), false)
+  assertEquals(budgetAllows({ used: 45, cap: 45, lastQuota: null, batchSize: 0 }), true)
+  assertEquals(budgetAllows({ used: 0, cap: 45, lastQuota: null, batchSize: 45 }), true)
+  assertEquals(budgetAllows({ used: 0, cap: 45, lastQuota: null, batchSize: 46 }), false)
 })
 
-Deno.test('BUD-05 the latest recorded quotaRemaining at or below 5 refuses', async () => {
+Deno.test('BUD-05 last_quota at or below 5 refuses; null (no send yet) and 6 allow', async () => {
   const { budgetAllows } = await core()
-  const at = (q: number | null, m: number, extra: Partial<any> = {}) => row({ quota_remaining: q, created_at: minutesAgo(m), ...extra })
-  assertEquals(budgetAllows({ texts: [at(30, 90), at(5, 60)], cap: 45, batchSize: 1 }), false, 'latest is 5')
-  assertEquals(budgetAllows({ texts: [at(30, 90), at(4, 60)], cap: 45, batchSize: 1 }), false, 'latest is 4')
-  assertEquals(budgetAllows({ texts: [at(30, 90), at(0, 60)], cap: 45, batchSize: 1 }), false, 'latest is 0')
-  assertEquals(budgetAllows({ texts: [at(30, 90), at(6, 60)], cap: 45, batchSize: 1 }), true, 'latest is 6')
-  assertEquals(
-    budgetAllows({ texts: [at(5, 90), at(null, 30, { status: 'failed' })], cap: 45, batchSize: 1 }), false,
-    'a later failed row with no quota does not reset the reserve check'
-  )
-  assertEquals(budgetAllows({ texts: [at(3, 90), at(200, 30)], cap: 45, batchSize: 1 }), true, 'Joe bought credit: latest is 200')
-  // Order of the array must not matter, only created_at.
-  assertEquals(budgetAllows({ texts: [at(5, 30), at(200, 90)], cap: 45, batchSize: 1 }), false, 'latest by time is 5')
+  for (const q of [5, 4, 0]) assertEquals(budgetAllows({ used: 0, cap: 45, lastQuota: q, batchSize: 1 }), false, `last_quota ${q}`)
+  assertEquals(budgetAllows({ used: 0, cap: 45, lastQuota: 6, batchSize: 1 }), true, 'last_quota 6')
+  assertEquals(budgetAllows({ used: 0, cap: 45, lastQuota: null, batchSize: 1 }), true, 'no quota recorded yet')
+  assertEquals(budgetAllows({ used: 0, cap: 45, lastQuota: 200, batchSize: 1 }), true, 'Joe bought credit')
 })
 
-Deno.test('BUD-06 dry-run rows quota values are ignored', async () => {
+Deno.test('BUD-06 an empty batch fits even at the reserve', async () => {
   const { budgetAllows } = await core()
-  const texts = [row({ quota_remaining: 30, created_at: minutesAgo(90) }), row({ dry_run: true, quota_remaining: 1, created_at: minutesAgo(10) })]
-  assertEquals(budgetAllows({ texts, cap: 45, batchSize: 1 }), true)
+  assertEquals(budgetAllows({ used: 45, cap: 45, lastQuota: 1, batchSize: 0 }), true)
 })
 
 // ---------------------------------------------------------------- RATE
@@ -125,6 +118,18 @@ Deno.test('RATE-04 only this member\'s texts count', async () => {
   const texts = rows(10, { member_id: memberId('Ben'), created_at: minutesAgo(5) })
   assertEquals(isRateLimited({ texts, memberId: memberId('Ava'), now: new Date() }), false)
   assertEquals(isRateLimited({ texts, memberId: memberId('Ben'), now: new Date() }), true)
+})
+
+Deno.test('RATE-05 dry-run rows count toward the hourly limit (Decision 2)', async () => {
+  const { isRateLimited } = await core()
+  const texts = rows(3, { dry_run: true, created_at: minutesAgo(5) })
+  assertEquals(isRateLimited({ texts, memberId: memberId('Ava'), now: new Date() }), true)
+})
+
+Deno.test('RATE-06 pending rows count toward the hourly limit (spec S3)', async () => {
+  const { isRateLimited } = await core()
+  const texts = rows(3, { status: 'pending', created_at: minutesAgo(5) })
+  assertEquals(isRateLimited({ texts, memberId: memberId('Ava'), now: new Date() }), true)
 })
 
 // ---------------------------------------------------------------- PICK
@@ -171,4 +176,23 @@ Deno.test('PICK-05 one member with no phone is skipped', async () => {
   const r = pickRecipients({ kind: 'invite', members: [m('Ava'), m('Dee', null)], texts: [], memberId: memberId('Dee') })
   assertEquals(r.send.length, 0)
   assert(r.skipped.some((s: any) => s.member_id === memberId('Dee')))
+})
+
+Deno.test('PICK-06 a dry-run invite does not count as already invited (Decision 1)', async () => {
+  const { pickRecipients } = await core()
+  const members = [m('Ava'), m('Ben')]
+  const texts = [row({ member_id: memberId('Ava'), kind: 'invite', status: 'sent', dry_run: true })]
+  const r = pickRecipients({ kind: 'invite', members, texts })
+  assertEquals(ids(r.send), [memberId('Ava'), memberId('Ben')].sort(), 'the first real Send invites still texts Ava')
+})
+
+Deno.test('PICK-07 a pending real invite counts as already invited (spec S3)', async () => {
+  const { pickRecipients } = await core()
+  const members = [m('Ava'), m('Ben')]
+  const texts = [
+    row({ member_id: memberId('Ava'), kind: 'invite', status: 'pending', dry_run: false }),
+    row({ member_id: memberId('Ben'), kind: 'invite', status: 'pending', dry_run: true })
+  ]
+  const r = pickRecipients({ kind: 'invite', members, texts })
+  assertEquals(ids(r.send), [memberId('Ben')], 'Ava has a real invite in flight; Ben only a dry-run one')
 })

@@ -308,3 +308,9 @@ details.person-fold > summary { cursor: pointer; min-height: var(--tap); display
   .check-row { grid-template-columns: 2.25rem 1fr auto; }
   .check-row__actions { margin-top: 0; grid-column: 3; grid-row: 1; justify-content: flex-end; align-self: center; }
 }
+
+/* ---------- 15. Help pages (help/*.html) ---------- */
+.help-list { padding-left: var(--sp-5); }
+ul.help-list { list-style: disc; }
+ol.help-list { list-style: decimal; }
+.help-list li { padding-left: var(--sp-1); }

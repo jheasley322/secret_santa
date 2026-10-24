@@ -58,7 +58,7 @@ select is((select array[name, budget::text, swap_date::text, swap_place] from pu
 
 -- ELF-03 / 04 status is not client-writable -----------------------------------
 select pg_temp.act_as('elf_a');
-select pg_temp.try($$insert into public.circles (name, status) values ('pgtap:elf-status', 'sent')$$);
+select pg_temp.try($$insert into public.circles (name, swap_date, status) values ('pgtap:elf-status', current_date + 20, 'sent')$$);
 select pg_temp.try($$update public.circles set status = 'sent'  where id = pg_temp.id('CA')$$);
 select pg_temp.try($$update public.circles set status = 'drawn' where id = pg_temp.id('CA')$$);
 select pg_temp.try($$update public.circles set status = 'open'  where id = pg_temp.id('CD')$$);
@@ -70,7 +70,7 @@ select is(pg_temp.circle_status('CD'), 'drawn', 'ELF-04 the Elf cannot move a ci
 
 -- ELF-05 / 06 elf_id is not client-writable -----------------------------------
 select pg_temp.act_as('elf_a');
-select pg_temp.try($$insert into public.circles (name, elf_id) values ('pgtap:elf-for-b', pg_temp.id('elf_b'))$$);
+select pg_temp.try($$insert into public.circles (name, swap_date, elf_id) values ('pgtap:elf-for-b', current_date + 20, pg_temp.id('elf_b'))$$);
 select pg_temp.try($$update public.circles set elf_id = pg_temp.id('elf_b') where id = pg_temp.id('CA')$$);
 select pg_temp.as_postgres();
 select is((select count(*) from public.circles where name = 'pgtap:elf-for-b' and elf_id = pg_temp.id('elf_b')), 0::bigint,
@@ -85,7 +85,7 @@ select is(pg_temp.try($$insert into public.members (circle_id, first_name, phone
           'succeeded', 'ELF-07 the Elf can add a member to their circle');
 select pg_temp.as_postgres();
 select pg_temp.remember('Dee', (select id from public.members where circle_id = pg_temp.id('CA') and first_name = 'Dee'));
-select ok((select token ~ '^[A-Za-z0-9_-]{43}$' from public.members where id = pg_temp.id('Dee')),
+select ok((select token ~ '^[A-Za-z0-9_-]{16}$' from public.members where id = pg_temp.id('Dee')),
           'ELF-07 the new member gets a generated token');
 select pg_temp.act_as('elf_a');
 select pg_temp.keep('dee_seen', (select phone || '|' || token from public.members where id = pg_temp.id('Dee')));

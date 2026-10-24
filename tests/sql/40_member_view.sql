@@ -40,9 +40,9 @@ select pg_temp.mk_members('W', 'Wes', 'Xia', 'Yan');
 select pg_temp.act_as_anon();
 select throws_ok($$select public.member_view('')$$, null, 'link not found', 'MV-01 an empty token gets link not found');
 select throws_ok($$select public.member_view('nope')$$, null, 'link not found', 'MV-01 a garbage token gets link not found');
-select throws_ok($$select public.member_view(repeat('A', 43))$$, null, 'link not found',
+select throws_ok($$select public.member_view(repeat('A', 16))$$, null, 'link not found',
                  'MV-01 a well-formed but unknown token gets link not found');
-select throws_ok($$select public.member_view(left(pg_temp.tok('Ava'), 20))$$, null, 'link not found',
+select throws_ok($$select public.member_view(left(pg_temp.tok('Ava'), 8))$$, null, 'link not found',
                  'MV-01 a prefix of a real token gets link not found');
 select throws_ok($$select public.member_view(upper(pg_temp.tok('Ava')))$$, null, 'link not found',
                  'MV-01 a real token in upper case gets link not found (tokens are case-sensitive)');

@@ -13,7 +13,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { assert, assert4xx, assertEquals, assertMatch } from './test_assert.ts'
 import {
-  BASE, ENV_DRY, ENV_EMPTY, ENV_REAL, ENV_REAL_NO_LINKS, JWT_B,
+  ALLOW, BASE, ENV_DRY, ENV_EMPTY, ENV_REAL, ENV_REAL_NO_LINKS, JWT_B, JWT_C,
   call, load, memberId, seedText, token, world
 } from './test_fakes.ts'
 
@@ -478,7 +478,7 @@ Deno.test('ST-34 texts and bodies hold no phone, no other token, no place', asyn
 Deno.test('ST-35 junk TEXTS_DRY_RUN stays dry run even with links approved', async () => {
   for (const v of ['yes', 'FALSE', '0', 'off', '']) {
     const w = world()
-    const r = await call(w, { TEXTS_DRY_RUN: v, TEXT_LINKS_APPROVED: 'true', APP_BASE_URL: BASE }, { circle_id: w.C1, kind: 'invite' })
+    const r = await call(w, { ELF_USER_IDS: ALLOW, TEXTS_DRY_RUN: v, TEXT_LINKS_APPROVED: 'true', APP_BASE_URL: BASE }, { circle_id: w.C1, kind: 'invite' })
     assertEquals(r.status, 200, `TEXTS_DRY_RUN=${JSON.stringify(v)}: ${JSON.stringify(r.json)}`)
     assertEquals(w.provider.outbox.length, 0, `TEXTS_DRY_RUN=${JSON.stringify(v)} must never reach the provider`)
     assertEquals(r.json?.dry_run, true)
@@ -537,4 +537,198 @@ Deno.test('ST-40 only index.ts touches Deno.env, fetch, supabase-js or Textbelt'
     assert(!/textbelt\.com/i.test(src), `${file} names textbelt.com`)
     assert(!/createClient|supabase-js/.test(src), `${file} creates a supabase client`)
   }
+})
+
+// ============================================ 2026-10-24: Joe's decisions + S1-S4
+// Spec: "Texting details -> Decisions from Joe (2026-10-24)" 1-4 and 6, and
+// "Security hardening (from the audit, 2026-10-24)" S1-S4. Contract: the
+// db.getBudget / claimTexts / finishText / recordQuota and provider.configured
+// rows of "Interface the tests assume" in tests/SCENARIOS.md.
+
+const pending = (w: ReturnType<typeof world>) => w.db.texts.filter(t => t.status === 'pending')
+
+Deno.test('ST-41 claim before provider: credits and pending rows exist when the first text goes', async () => {
+  const w = world()
+  w.db.used = 10
+  const r = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'invite' })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  assertEquals(w.provider.outbox.length, 3)
+  const first = w.provider.outbox[0]
+  assertEquals(first.usedAtSend, 13, 'the whole batch (3) is claimed in the database before the first provider call')
+  assertEquals(first.pendingAtSend.slice().sort(), [memberId('Ava'), memberId('Ben'), memberId('Cy')].sort(),
+    'every member in the batch has a pending row before the first provider call')
+  assertEquals(w.db.used, 13, 'the counter ends at 13: 3 real texts')
+})
+
+Deno.test('ST-42 a refused claim means zero provider calls and "text budget used up"', async () => {
+  // The read-only pre-check sees room (used 40 of 45); another request claims
+  // 4 credits before ours does, so our claim of 3 is refused in the database.
+  const w = world()
+  w.db.used = 40
+  w.db.raceUsed = 4
+  const r = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'invite' })
+  assert4xx(r.status)
+  assertEquals(r.json?.error, 'text budget used up')
+  nothingHappened(w, 'claim refused')
+  assertEquals(w.db.used, 44, 'nothing of ours is counted')
+})
+
+Deno.test('ST-43 a refused claim on Send the names leaves the circle drawn', async () => {
+  const w = world({ status: 'drawn' })
+  w.db.used = 42
+  w.db.raceUsed = 1
+  const r = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'reveal' })
+  assert4xx(r.status)
+  assertEquals(r.json?.error, 'text budget used up')
+  nothingHappened(w, 'reveal claim refused')
+  assertEquals(w.db.status(w.C1), 'drawn', 'the draw is not locked when nothing can be sent')
+})
+
+Deno.test('ST-44 a provider call followed by a failed log write still leaves the credit counted', async () => {
+  const w = world()
+  w.db.used = 20
+  w.db.failFinish = true
+  const r = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'invite', member_id: memberId('Ava') })
+  assertEquals(w.provider.outbox.length, 1, 'the text went out')
+  assert(r.status >= 400, `a failed log write is reported as an error, got ${r.status}`)
+  assertEquals(w.db.used, 21, 'the credit was claimed before the provider call and stays counted')
+  assert(w.db.texts.some(t => t.member_id === memberId('Ava') && t.status === 'pending' && !t.dry_run),
+    'the claimed row is left pending (fail closed), never deleted')
+
+  // That pending row keeps protecting Ava: the next Send invites skips her.
+  w.db.failFinish = false
+  const before = w.provider.outbox.length
+  const next = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'invite' })
+  assertEquals(next.status, 200, JSON.stringify(next.json))
+  assertEquals(w.provider.outbox.slice(before).map(s => s.phone).sort(), ['+15555550102', '+15555550103'],
+    'Ava, whose send may have gone, is not texted again')
+})
+
+Deno.test('ST-45 no row is left pending after a request that finishes', async () => {
+  // Plain batch, a failed provider call, a mid-batch reserve stop, and a dry run.
+  const plain = world()
+  await call(plain, ENV_REAL, { circle_id: plain.C1, kind: 'invite' })
+  const failing = world()
+  failing.provider.script = [{ success: false, error: 'carrier said no' }, 'throw']
+  await call(failing, ENV_REAL, { circle_id: failing.C1, kind: 'invite' })
+  const reserve = world({ extra: [{ label: 'Dee', phone: '+15555550104' }] })
+  reserve.provider.script = [{ success: true, textId: 'tb-1', quotaRemaining: 5 }]
+  await call(reserve, ENV_REAL, { circle_id: reserve.C1, kind: 'invite' })
+  const dry = world()
+  await call(dry, ENV_DRY, { circle_id: dry.C1, kind: 'invite' })
+  for (const [name, w] of [['plain', plain], ['failing', failing], ['reserve stop', reserve], ['dry run', dry]] as const) {
+    assertEquals(pending(w).length, 0, `${name}: every pending row is finished as sent or failed`)
+  }
+  assertEquals(reserve.provider.outbox.length, 1, 'reserve stop: nothing more went after quotaRemaining 5')
+})
+
+Deno.test('ST-46 the quota Textbelt reports is recorded in the database', async () => {
+  const w = world()
+  w.provider.script = [{ success: true, textId: 'tb-1', quotaRemaining: 37 }]
+  const r = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'invite', member_id: memberId('Ava') })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  assertEquals(w.db.lastQuota, 37)
+})
+
+Deno.test('ST-47 dry runs never touch the credit counter, even at the cap (Decision 2)', async () => {
+  const w = world()
+  useUpCap(w)
+  const usedBefore = w.db.used
+  const r = await call(w, ENV_DRY, { circle_id: w.C1, kind: 'invite' })
+  assertEquals(r.status, 200, `a dry run at the cap still runs: ${JSON.stringify(r.json)}`)
+  assertEquals(w.provider.outbox.length, 0)
+  assertEquals(w.db.inserted.filter(t => t.dry_run && t.status === 'sent').length, 3)
+  assertEquals(w.db.used, usedBefore, 'used is unchanged')
+})
+
+Deno.test('ST-48 a dry-run invite does not count as invited: the first real Send invites texts everyone (Decision 1)', async () => {
+  const w = world()
+  for (const l of ['Ava', 'Ben', 'Cy']) seedText(w.db, l, { dry_run: true, minutesAgo: 90 })
+  const r = await call(w, ENV_REAL, { circle_id: w.C1, kind: 'invite' })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  assertEquals(w.provider.outbox.map(s => s.phone).sort(), ['+15555550101', '+15555550102', '+15555550103'])
+})
+
+Deno.test('ST-49 a dry-run batch skips a member rate-limited by dry-run rows; the rest still go (Decisions 2, 3)', async () => {
+  const w = world()
+  for (let i = 0; i < 3; i++) seedText(w.db, 'Ava', { dry_run: true, minutesAgo: 10 })
+  const r = await call(w, ENV_DRY, { circle_id: w.C1, kind: 'invite' })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  assertEquals(result(r.json, 'Ava')?.status, 'skipped')
+  assertMatch(result(r.json, 'Ava')?.error ?? '', /too many texts/)
+  assertEquals(w.db.inserted.filter(t => t.status === 'sent').map(t => t.member_id).sort(),
+    [memberId('Ben'), memberId('Cy')].sort())
+  assertEquals([r.json?.sent, r.json?.skipped], [2, 1])
+})
+
+Deno.test('ST-50 the reveal wording is exactly as Joe approved (Decision 4)', async () => {
+  const w = world({ status: 'drawn', budget: 20, swap_date: '2026-12-19' })
+  const r = await call(w, ENV_DRY, { circle_id: w.C1, kind: 'reveal' })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  const body = w.db.inserted.find(t => t.member_id === memberId('Ava'))?.body
+  assertEquals(body, `Secret Santa! Ava, you drew Ben! $20, Dec 19. Their list: ${BASE}/m/#${token('Ava')}`)
+})
+
+// ------------------------------------------------------------ S2 allow-list
+Deno.test('ST-51 a signed-in user not on ELF_USER_IDS gets "circle not found", before any database use', async () => {
+  for (const kind of ['invite', 'reveal']) {
+    const w = world({ status: kind === 'reveal' ? 'drawn' : 'open' })
+    w.db.poisoned = true
+    const r = await call(w, ENV_REAL, { circle_id: w.C1, kind }, { auth: JWT_C })
+    assertEquals(r.status, 404, `${kind}: ${JSON.stringify(r.json)}`)
+    assertEquals(r.json?.error, 'circle not found')
+    w.db.poisoned = false
+    nothingHappened(w, `stranger ${kind}`)
+  }
+})
+
+Deno.test('ST-52 a missing or empty ELF_USER_IDS lets nobody in (fail closed)', async () => {
+  for (const list of [undefined, '', ' , ']) {
+    const w = world()
+    const env: Record<string, string> = { ...ENV_DRY }
+    if (list === undefined) delete env.ELF_USER_IDS
+    else env.ELF_USER_IDS = list
+    const r = await call(w, env, { circle_id: w.C1, kind: 'invite' })
+    assertEquals(r.status, 404, `ELF_USER_IDS=${JSON.stringify(list)}`)
+    assertEquals(r.json?.error, 'circle not found')
+    nothingHappened(w, `allow-list ${JSON.stringify(list)}`)
+  }
+})
+
+Deno.test('ST-53 ELF_USER_IDS is a comma-separated list; spaces around ids are ignored', async () => {
+  const w = world()
+  const r = await call(w, { ...ENV_DRY, ELF_USER_IDS: ` ${'00000000-0000-4000-8000-0000000000ff'} , ${w.db.circles.get(w.C1)!.elf_id} ` },
+    { circle_id: w.C1, kind: 'invite' })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  assertEquals(w.db.inserted.length, 3)
+})
+
+// ------------------------------------------------------------ S4 not set up
+Deno.test('ST-54 "texting is not set up yet" (503) comes only after auth and the allow-list', async () => {
+  const mk = () => { const w = world(); w.provider.configured = false; return w }
+  const anon = mk()
+  const a = await call(anon, ENV_REAL, { circle_id: anon.C1, kind: 'invite' }, { auth: null })
+  assertEquals(a.status, 401, `no JWT: sign in first, not 503 (${JSON.stringify(a.json)})`)
+  const stranger = mk()
+  const s = await call(stranger, ENV_REAL, { circle_id: stranger.C1, kind: 'invite' }, { auth: JWT_C })
+  assertEquals([s.status, s.json?.error], [404, 'circle not found'], 'not on the allow-list: circle not found, not 503')
+  const elf = mk()
+  const e = await call(elf, ENV_REAL, { circle_id: elf.C1, kind: 'invite' })
+  assertEquals([e.status, e.json?.error], [503, 'texting is not set up yet'])
+  nothingHappened(elf, 'not set up')
+  assertEquals(elf.db.used, 0, 'no credit claimed')
+})
+
+Deno.test('ST-55 dry run needs no Textbelt key', async () => {
+  const w = world()
+  w.provider.configured = false
+  const r = await call(w, ENV_DRY, { circle_id: w.C1, kind: 'invite' })
+  assertEquals(r.status, 200, JSON.stringify(r.json))
+  assertEquals(w.db.inserted.length, 3)
+})
+
+Deno.test('ST-56 index.ts passes ELF_USER_IDS to the handler and no longer answers 503 before auth', async () => {
+  const src = await Deno.readTextFile(new URL('./index.ts', import.meta.url))
+  assert(/ELF_USER_IDS/.test(src), 'index.ts must read ELF_USER_IDS and hand it to the handler')
+  assert(!/texting is not set up/.test(src), 'the not-set-up refusal belongs in handler.ts, after auth (spec S4)')
 })

@@ -15,7 +15,7 @@ beforeAll(async () => {
 })
 
 const BASE = 'https://jheasley322.github.io/secret_santa'
-const TOKEN = 'Qx7_k2-LmN0pRsTuVwXyZaBcDeFgHiJkLmNoPqRsTuV' // 43 chars, base64url
+const TOKEN = 'Qx7_k2-LmN0pRsTu' // 16 chars, base64url (spec: shorter links)
 const LINK = `${BASE}/m/#${TOKEN}`
 
 const LONG_KID = 'Bartholomew-Maximilian Featherstonehaugh' // 40 chars, the DB maximum
@@ -32,7 +32,7 @@ function reveal (name, receiver, { budget = null, swapDate = null, link = LINK }
 
 describe('sanity of the fixtures', () => {
   it('fixture lengths are what the tests claim', () => {
-    expect(TOKEN).toHaveLength(43)
+    expect(TOKEN).toHaveLength(16)
     expect(LONG_KID).toHaveLength(40)
     expect(LONG_CIRCLE).toHaveLength(80)
   })
@@ -100,6 +100,13 @@ describe('MSG-03 / 04 / 05 reveal template', () => {
   })
   it('MSG-05 a budget of 0 is set, so it shows $0', () => {
     expect(reveal('Maya', 'Ava', { budget: 0 })).toContain('$0')
+  })
+})
+
+describe('MSG-12 the reveal wording Joe approved (Decision 4, 2026-10-24)', () => {
+  it('MSG-12 exactly "Secret Santa! Maya, you drew Ava! $20, Dec 19. Their list: <link>"', () => {
+    expect(reveal('Maya', 'Ava', { budget: 20, swapDate: '2026-12-19' }))
+      .toBe(`Secret Santa! Maya, you drew Ava! $20, Dec 19. Their list: ${LINK}`)
   })
 })
 

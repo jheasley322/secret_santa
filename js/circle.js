@@ -260,12 +260,14 @@ $('edit-circle').addEventListener('submit', e => {
   let ok = true
   if (!name.value.trim()) { fieldError(name, 'Give the circle a name.'); ok = false } else fieldError(name, null)
   if (b !== '' && !/^\d+$/.test(b)) { fieldError(budget, 'Use whole dollars, like 20.'); ok = false } else fieldError(budget, null)
+  const date = $('e-date')
+  if (!date.value) { fieldError(date, 'Pick the swap date. It can be changed, but not left empty.'); ok = false } else fieldError(date, null)
   if (!ok) return
   busy(e.submitter ?? e.target.querySelector('button'), async () => {
     const changes = {
       name: name.value.trim(),
       budget: b === '' ? null : Number(b),
-      swap_date: $('e-date').value || null,
+      swap_date: $('e-date').value,
       swap_place: $('e-place').value.trim() || null
     }
     const { data, error } = await supabase.from('circles').update(changes).eq('id', circleId)

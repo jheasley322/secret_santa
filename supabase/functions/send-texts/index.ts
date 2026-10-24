@@ -7,28 +7,25 @@
 //   TEXT_LINKS_APPROVED  only "true" allows real texts with links. Missing = refused.
 //   APP_BASE_URL         base for member links (default https://jheasley322.github.io/secret_santa)
 //   TEXTBELT_KEY         needed only for real sends. Never logged or returned.
+//   ELF_USER_IDS         comma-separated auth user ids of approved Elves (spec S2).
+//                        Missing or empty = nobody may use this function.
 // SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
 
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0'
-import { CORS, handle, type Deps } from './handler.ts'
-import { readSettings } from './core.ts'
+import { handle, type ClaimResult, type Deps } from './handler.ts'
 import { makeTextbeltProvider } from './provider.ts'
 
 const env = (name: string) => Deno.env.get(name) ?? undefined
 
 Deno.serve(async (req: Request) => {
-  const settings = { TEXTS_DRY_RUN: env('TEXTS_DRY_RUN'), TEXT_LINKS_APPROVED: env('TEXT_LINKS_APPROVED'), APP_BASE_URL: env('APP_BASE_URL') }
+  const settings = {
+    TEXTS_DRY_RUN: env('TEXTS_DRY_RUN'), TEXT_LINKS_APPROVED: env('TEXT_LINKS_APPROVED'),
+    APP_BASE_URL: env('APP_BASE_URL'), ELF_USER_IDS: env('ELF_USER_IDS')
+  }
   const url = env('SUPABASE_URL') as string
   const anonKey = env('SUPABASE_ANON_KEY') as string
+  // The handler decides "not set up" from provider.configured, after auth (spec S4).
   const textbeltKey = env('TEXTBELT_KEY')
-
-  // Real mode without a key would log failed "real" rows that count against
-  // the cap without spending anything. Refuse up front instead.
-  if (req.method === 'POST' && !readSettings(settings).dryRun && !textbeltKey) {
-    return new Response(JSON.stringify({ error: 'texting is not set up yet' }), {
-      status: 503, headers: { ...CORS, 'content-type': 'application/json' }
-    })
-  }
 
   const authorization = req.headers.get('authorization')
   // The Elf's own client: RLS decides which circles they can see.
@@ -36,8 +33,9 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: authorization ?? '' } }
   })
-  // The service-role client is created only after the JWT and ownership checks
-  // pass (the handler calls getUserId and getCircle first).
+  // The service-role client is created lazily, only after the JWT, the
+  // ELF_USER_IDS allow-list and ownership checks pass (the handler calls
+  // getUserId, then getCircle through the Elf's own client, first).
   let service: SupabaseClient | null = null
   const svc = () => service ??= createClient(url, env('SUPABASE_SERVICE_ROLE_KEY') as string, {
     auth: { persistSession: false, autoRefreshToken: false }
@@ -69,34 +67,56 @@ Deno.serve(async (req: Request) => {
         if (error) throw new Error('could not read matches')
         return data ?? []
       },
-      async getTexts () {
-        // Every row, all circles: the cap is lifetime. Paged past PostgREST's row limit.
+      async getTexts (circleId) {
+        // This circle's members' rows only: the rate limit and duplicate-invite
+        // pre-checks. (The cap no longer counts rows: spec S1.) claim_texts
+        // re-checks both under the circle lock.
+        const { data: ms, error: me } = await svc().from('members').select('id').eq('circle_id', circleId)
+        if (me) throw new Error('could not read members')
+        const ids = (ms ?? []).map((m: { id: string }) => m.id)
+        if (ids.length === 0) return []
         const out = []
         for (let from = 0; ; from += 1000) {
           const { data, error } = await svc().from('texts')
             .select('member_id, kind, status, dry_run, quota_remaining, created_at')
-            .order('created_at').range(from, from + 999)
+            .in('member_id', ids).order('created_at').range(from, from + 999)
           if (error) throw new Error('could not read texts')
           out.push(...(data ?? []))
           if (!data || data.length < 1000) return out
         }
       },
-      async getCap () {
-        const { data, error } = await svc().rpc('text_budget_cap')
-        // No readable cap means no real sends.
-        if (error || typeof data !== 'number') throw new Error('could not read the text budget')
-        return data
+      async getBudget () {
+        const { data, error } = await svc().rpc('text_budget_state')
+        // No readable budget means no real sends.
+        if (error || !data || typeof data.cap !== 'number' || typeof data.used !== 'number') {
+          throw new Error('could not read the text budget')
+        }
+        return { cap: data.cap, used: data.used, last_quota: typeof data.last_quota === 'number' ? data.last_quota : null }
       },
-      async insertText (row) {
-        const { error } = await svc().from('texts').insert(row)
-        // Stop the batch: an unlogged real send would escape the cap.
-        if (error) throw new Error('could not log a text')
+      async claimTexts (a) {
+        const { data, error } = await svc().rpc('claim_texts', {
+          p_circle_id: a.circle_id, p_kind: a.kind, p_member_ids: a.member_ids, p_dry_run: a.dry_run, p_resend: a.resend
+        })
+        if (error || !data || typeof data !== 'object') throw new Error('could not claim texts')
+        return data as ClaimResult
+      },
+      async finishText (textId, patch) {
+        // pending -> sent / failed, exactly once per row.
+        const { data, error } = await svc().from('texts').update(patch)
+          .eq('id', textId).eq('status', 'pending').select('id')
+        // Stop the batch: the row stays pending, which keeps it counted.
+        if (error || (data ?? []).length !== 1) throw new Error('could not log a text')
+      },
+      async recordQuota (quota) {
+        const { error } = await svc().rpc('record_text_quota', { p_quota: quota })
+        if (error) throw new Error('could not record the text quota')
       },
       async lockCircleSent (id) {
-        const { data, error } = await svc().from('circles')
-          .update({ status: 'sent' }).eq('id', id).eq('status', 'drawn').select('id')
-        if (error) throw new Error('could not lock the circle')
-        return (data ?? []).length === 1
+        // claim_texts already moved drawn -> sent in the claim's transaction;
+        // this confirms it before the first reveal leaves.
+        const { data, error } = await svc().from('circles').select('status').eq('id', id).maybeSingle()
+        if (error) throw new Error('could not read the circle')
+        return data?.status === 'sent'
       }
     }
   }

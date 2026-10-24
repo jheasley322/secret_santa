@@ -74,7 +74,7 @@ select is((select count(*) from public.no_pairs where circle_id = pg_temp.id('CY
 
 -- ISO-04 / 05 / 10 no inserts into B's circle --------------------------------
 select pg_temp.act_as('elf_a');
-select pg_temp.try($$insert into public.members (circle_id, first_name) values (pg_temp.id('CY'), 'Intruder')$$);
+select pg_temp.try($$insert into public.members (circle_id, first_name, phone) values (pg_temp.id('CY'), 'Intruder', '+15555550170')$$);
 select pg_temp.try($$insert into public.wish_items (member_id, text, position) values (pg_temp.id('Yan'), 'planted', 5)$$);
 select pg_temp.try($$insert into public.no_pairs (circle_id, member_a, member_b)
                      values (pg_temp.id('CY'), least(pg_temp.id('Yuri'), pg_temp.id('Yara')),

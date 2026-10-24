@@ -1,9 +1,9 @@
 // Phone numbers to E.164 (spec "Data model": e.g. +15551234567).
-// US numbers can be typed any common way; other countries need a leading +.
-// Anything that isn't clearly a phone number gives null (the page then shows
-// an error), and the database checks the same pattern again.
+// US numbers only (spec "Security hardening" S2), typed any common way.
+// Anything that isn't clearly a US phone number gives null (the page then shows
+// an error), and the database checks the same pattern again (^\+1[0-9]{10}$).
 
-const E164 = /^\+[1-9][0-9]{7,14}$/
+const US_E164 = /^\+1[0-9]{10}$/
 
 export function normalizePhone (input) {
   if (typeof input !== 'string') return null
@@ -13,7 +13,8 @@ export function normalizePhone (input) {
   const digits = s.replace(/\D/g, '')
   let out
   if (s.startsWith('+')) {
-    if (digits.startsWith('1') && digits.length !== 11) return null
+    // +1 and 10 more digits only: other country codes are refused.
+    if (!digits.startsWith('1') || digits.length !== 11) return null
     out = '+' + digits
   } else if (digits.length === 10) {
     out = '+1' + digits
@@ -22,7 +23,7 @@ export function normalizePhone (input) {
   } else {
     return null
   }
-  return E164.test(out) ? out : null
+  return US_E164.test(out) ? out : null
 }
 
 /** +15555550101 -> (555) 555-0101 for display; other numbers as stored. */

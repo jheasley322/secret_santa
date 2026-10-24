@@ -51,7 +51,7 @@ select throws_ok('select * from public.matches',    '42501', null, 'ANON-02 anon
 select throws_ok('select * from public.texts',      '42501', null, 'ANON-02 anon cannot select texts');
 
 -- ANON-03: nor writing ---------------------------------------------------------
-select throws_ok($$insert into public.members (circle_id, first_name) values (pg_temp.id('C'), 'Sneaky')$$,
+select throws_ok($$insert into public.members (circle_id, first_name, phone) values (pg_temp.id('C'), 'Sneaky', '+15555550163')$$,
                  '42501', null, 'ANON-03 anon cannot insert a member');
 select throws_ok($$update public.circles set name = 'pgtap:hacked'$$,
                  '42501', null, 'ANON-03 anon cannot update circles');

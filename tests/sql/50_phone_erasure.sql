@@ -4,7 +4,7 @@
 -- Spec: "Privacy rules" 4 ("Numbers are erased 7 days after the swap date"),
 -- "Interface contract -> Internal" (erase_old_phones() sets phone = null where
 -- swap_date + 7 < current_date and returns the count; run daily by pg_cron).
--- Scenarios ERASE-01..07 in tests/SCENARIOS.md.
+-- Scenarios ERASE-01..08 in tests/SCENARIOS.md.
 --
 -- erase_old_phones() sweeps EVERY circle, so the expected count is measured
 -- from the whole table just before the call, not assumed from the fixtures.
@@ -28,8 +28,6 @@ select pg_temp.mk_circle('E0', 'elf', current_date);
 select pg_temp.mk_members('E0', 'Fay');
 select pg_temp.mk_circle('EF', 'elf', current_date + 5);
 select pg_temp.mk_members('EF', 'Gus');
-select pg_temp.mk_circle('EN', 'elf', null);
-select pg_temp.mk_members('EN', 'Hal');
 -- A finished circle: sent, 10 days after the swap.
 select pg_temp.mk_circle('ES', 'elf', current_date - 10);
 select pg_temp.mk_members('ES', 'Ida', 'Jo', 'Kai');
@@ -57,8 +55,10 @@ select is((select count(*) from public.members where circle_id = pg_temp.id('E6'
 select is((select count(*) from public.members
             where circle_id in (pg_temp.id('E0'), pg_temp.id('EF')) and phone is null), 0::bigint,
           'ERASE-02 phones are kept on and before the swap date');
-select is((select count(*) from public.members where circle_id = pg_temp.id('EN') and phone is null), 0::bigint,
-          'ERASE-02 phones are kept when no swap date is set');
+-- ERASE-08 (Joe, Decision 7): there is no "no swap date" circle any more, so
+-- no phone can escape erasure. (Replaces the old "kept when no swap date" check.)
+select col_not_null('public', 'circles', 'swap_date',
+          'ERASE-08 every circle has a swap date, so every phone is eventually erased');
 
 -- ERASE-03 the count ----------------------------------------------------------
 select is(pg_temp.val('erased'), pg_temp.val('expected'),

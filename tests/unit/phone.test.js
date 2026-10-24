@@ -1,4 +1,4 @@
-// PH-01..06: phone normalisation to E.164, US by default.
+// PH-01..07: phone normalisation to E.164, US (+1) only.
 // Spec: "Data model" (phone E.164, e.g. +15551234567), "Interface contract ->
 // Constraints" (phone: null or ^\+[1-9][0-9]{7,14}$), "The flow" 2.
 //
@@ -14,6 +14,8 @@ beforeAll(async () => {
 })
 
 const E164 = /^\+[1-9][0-9]{7,14}$/
+// spec S2: the DB accepts +1 and ten digits only.
+const US = /^\+1[0-9]{10}$/
 
 describe('PH-01 US 10-digit formats', () => {
   for (const input of ['5555550123', '555-555-0123', '(555) 555-0123', '(555)555-0123', '555.555.0123', '555 555 0123', '  555-555-0123  ']) {
@@ -31,13 +33,14 @@ describe('PH-02 leading 1 and +1', () => {
   }
 })
 
-describe('PH-03 international numbers in + form', () => {
-  it('PH-03 +44 20 7946 0958 -> +442079460958', () => {
-    expect(normalizePhone('+44 20 7946 0958')).toBe('+442079460958')
-  })
-  it('PH-03 +61 491 570 006 -> +61491570006', () => {
-    expect(normalizePhone('+61 491 570 006')).toBe('+61491570006')
-  })
+// Revised 2026-10-24, spec "Security hardening" S2: phone numbers are US only
+// (+1) at the DB check, so the page must not accept what the database rejects.
+describe('PH-03 non-US numbers are rejected (US only, spec S2)', () => {
+  for (const input of ['+44 20 7946 0958', '+61 491 570 006', '+33 6 12 34 56 78', '+52 1 555 555 0142', '+7 912 345 67 89']) {
+    it(`PH-03 ${JSON.stringify(input)} -> null`, () => {
+      expect(normalizePhone(input)).toBeNull()
+    })
+  }
 })
 
 describe('PH-04 junk is rejected', () => {
@@ -69,6 +72,7 @@ describe('PH-05 / 06 output shape', () => {
     for (const input of inputs) {
       const out = normalizePhone(input)
       if (out !== null) expect(out, input).toMatch(E164)
+      if (out !== null) expect(out, input).toMatch(US)
     }
   })
 
@@ -77,5 +81,11 @@ describe('PH-05 / 06 output shape', () => {
       const once = normalizePhone(input)
       if (once !== null) expect(normalizePhone(once), input).toBe(once)
     }
+  })
+})
+
+describe('PH-07 a phone is required (Decision 5)', () => {
+  it('PH-07 nothing typed gives null, so the page can say a number is needed', () => {
+    for (const input of ['', '   ', null, undefined]) expect(normalizePhone(input)).toBeNull()
   })
 })

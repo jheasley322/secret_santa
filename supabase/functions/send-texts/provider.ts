@@ -12,6 +12,8 @@ type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 export function makeTextbeltProvider ({ key, fetch }: { key?: string; fetch: Fetch }) {
   const scrub = (s: unknown) => String(s ?? '').split(key || '\u0000').join('[hidden]').slice(0, 200)
   return {
+    /** spec S4: true only when a non-blank key is set. The key itself is never exposed. */
+    configured: Boolean(key && key.trim()),
     async send (phone: string, message: string): Promise<SendResult> {
       if (!key || !key.trim()) return { success: false, error: 'texting is not set up' }
       let res: Response
