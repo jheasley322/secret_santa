@@ -34,7 +34,7 @@ begin;
 
 create extension if not exists pgrowlocks with schema extensions;
 
-select plan(57);
+select plan(58);
 
 -- --------------------------------------------------------------- helpers
 create function pg_temp.svc(p_sql text) returns text
@@ -223,8 +223,13 @@ select is(pg_temp.used(), '40', 'CLM-05 claiming 0 or -5 leaves used at 40');
 select pg_temp.quota(5);
 select is(pg_temp.last_quota(), '5', 'CLM-06 record_text_quota stores Textbelt''s quotaRemaining');
 select is(pg_temp.claim('CA', 1) || '|' || pg_temp.used(), 'false|40', 'CLM-06 last_quota 5 refuses, and nothing is counted');
-select pg_temp.quota(6);
+-- Revised 2026-10-24 (audit_lows finding 4): record_text_quota keeps the lower
+-- value, so a later 6 can't raise 5. Joe resets last_quota with SQL after buying
+-- credit; set_budget models that. The reserve rule is last_quota - n >= 5, and
+-- the claim decrements last_quota by n atomically.
+select pg_temp.set_budget(45, 40, 6);
 select is(pg_temp.claim('CA', 1) || '|' || pg_temp.used(), 'true|41', 'CLM-06 last_quota 6 allows');
+select is(pg_temp.last_quota(), '5', 'CLM-06 a claim of 1 lowers last_quota from 6 to 5 in the same update');
 
 -- CLM-07 the counter is the authority, not the texts table -------------------------
 select pg_temp.set_budget(45, 45, null);

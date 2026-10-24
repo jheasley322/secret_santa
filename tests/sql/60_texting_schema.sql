@@ -8,7 +8,7 @@
 begin;
 -- \include tests/fixtures/sql/fixtures.sql
 
-select plan(17);
+select plan(19);
 
 select pg_temp.mk_elf('elf_a');
 select pg_temp.mk_elf('elf_b');
@@ -75,6 +75,22 @@ select pg_temp.act_as_service();
 select pg_temp.keep('cap_seen', public.text_budget_cap()::text);
 select pg_temp.as_postgres();
 select is(pg_temp.val('cap_seen'), '46', 'TXB-09 text_budget_cap() returns the value Joe set');
+
+-- TXB-10 / TXB-11: text_budget_state() is what send-texts actually reads (S1).
+-- text_budget_cap() is unused; TXB-08/09 retire in the PR that drops it.
+select is(
+  array[has_function_privilege('service_role', 'public.text_budget_state()', 'execute'),
+        has_function_privilege('anon', 'public.text_budget_state()', 'execute'),
+        has_function_privilege('authenticated', 'public.text_budget_state()', 'execute'),
+        has_function_privilege('public', 'public.text_budget_state()', 'execute')],
+  array[true, false, false, false], 'TXB-10 text_budget_state() is executable by service_role only');
+
+update private.text_budget set cap = 46, used = 7, last_quota = 30;
+select pg_temp.act_as_service();
+select pg_temp.keep('state_seen', public.text_budget_state()::text);
+select pg_temp.as_postgres();
+select is(pg_temp.val('state_seen')::jsonb, '{"cap": 46, "used": 7, "last_quota": 30}'::jsonb,
+          'TXB-11 text_budget_state() returns exactly cap, used and last_quota as stored');
 
 select * from finish();
 rollback;

@@ -513,6 +513,7 @@ Spec: *Data model* (E.164), *Constraints* (`^\+[1-9][0-9]{7,14}$`), *The flow* 2
 | PH-05 | Every non-null output matches the spec's E.164 pattern and the US form `^\+1[0-9]{10}$`. |
 | PH-06 | Normalising twice gives the same answer. |
 | PH-07 | Nothing typed gives null, so the page can say a number is needed (Decision 5). |
+| PH-08 | *Re-audit finding 3:* `+1` numbers from Canada (416, 604, 514, 867, 905) and the Caribbean / Atlantic (876, 809, 242, 441) give null, matching AL-24..26. US numbers and US territories (787) still pass. |
 
 ### ESC: HTML escaping (`tests/unit/escape.test.js`)
 
@@ -554,6 +555,10 @@ cap lives* and *Dry-run bodies*.
 | TXB-07 | A real row (`dry_run = false`) with a body is rejected. The body is for dry runs only. |
 | TXB-08 | `public.text_budget_cap()` is executable by `service_role` only, not by `anon` or `authenticated`. |
 | TXB-09 | `text_budget_cap()` returns the stored cap (after Joe changes it to 46, it returns 46). |
+| TXB-10 | `public.text_budget_state()` (what send-texts actually reads) is executable by `service_role` only, not by public, anon or authenticated. |
+| TXB-11 | `text_budget_state()` returns exactly `{cap, used, last_quota}` as stored. |
+
+*TXB-08/09 can retire:* `text_budget_cap()` has no caller (send-texts reads `text_budget_state()`, TXB-10/11). They go in the same PR as the migration that drops it.
 
 ### CLM / CT / RLSA: credit claims under a lock (`tests/sql/61_text_credits.sql`, pgTAP)
 
@@ -619,7 +624,7 @@ test's own uncommitted transaction, so no other session can lock them.
 | CLM-03 | 40 used + 3 of 45 is granted, and `used` becomes 43. |
 | CLM-04 | **Two claims in sequence:** 43 + 3 is refused and reserves nothing. 43 + 2 = 45 fits exactly. At 45, a single credit is refused. |
 | CLM-05 | A claim of 0 or −5 never lowers `used`. |
-| CLM-06 | `record_text_quota(5)` stores 5. Then any claim is refused and nothing is counted. After `record_text_quota(6)`, it's allowed. |
+| CLM-06 | `record_text_quota(5)` stores 5. Then any claim is refused and nothing is counted. With `last_quota` set to 6 (as Joe does with SQL), a claim of 1 is allowed and lowers it to 5. *Revised 2026-10-24 for AL-12..17: `record_text_quota` never raises the value, so a later 6 can't undo a 5.* |
 | CLM-07 | The counter is the authority. `used = cap` refuses with no `texts` rows, and 45 real `texts` rows aren't re-counted on top of `used`. |
 | CLM-08 | **Deletes never lower it:** after the Elf deletes a circle whose 3 texts were claimed (and the other circle's texts are deleted too), `used` is unchanged and those 3 still count against the cap. |
 | CLM-09 | A claim for a circle that doesn't exist counts nothing. |
@@ -636,6 +641,35 @@ test's own uncommitted transaction, so no other session can lock them.
 | CT-10 | After `claim_texts`, this transaction holds a writer lock on the circle row (plus a harness check). |
 | CT-11 | A whole-circle reveal claim moves the circle `drawn → sent`. A second (losing) reveal batch gets `names have already been sent` and writes and claims nothing. A reveal refused by the cap leaves the circle `drawn`. |
 | RLSA-01 | `public.rls_auto_enable()` isn't executable by public, anon or authenticated (S5). |
+
+### AL: re-audit fixes (`tests/sql/62_audit_lows.sql`, pgTAP)
+
+Spec: *HARD LIMITS*, *Security hardening* S1–S3, *Lead decisions on the S1–S3 contract*. Pins
+`supabase/migrations/20261024150000_audit_lows.sql`. backend-engineer wrote it as an agreed
+exception to test-first, and test-author reviewed it on 2026-10-24: it asserts outcomes (row
+states, the counter, accept/reject), not call order, and it's kept as is.
+
+| ID | Scenario |
+|---|---|
+| AL-01..03 | `private.sweep_pending_texts(uuid)` exists. No client role, service_role included, can execute it. pg_cron runs it every 10 minutes. |
+| AL-04..08 | `claim_texts` first sweeps its own circle's `pending` rows older than 10 minutes to `failed` / `timed out`, so a crashed send no longer blocks a kid's invite. It leaves other circles and 9-minute-old rows alone, and `used` never goes down. |
+| AL-09..11 | The cron form sweeps every circle, dry-run rows included. `sent` rows are untouched. A swept row is kept, so it still counts toward the 3-per-hour limit. |
+| AL-12..16 | **Atomic reserve:** a claim of n needs `last_quota - n >= 5` and lowers `last_quota` by n in the same update. A batch that would dig into the reserve is refused whole. A null `last_quota` (no real send yet) means only the cap applies. |
+| AL-17..20 | `record_text_quota` keeps the lower of the stored and reported values (never raises it; Joe resets it with SQL after buying credit). From null it stores the figure. A null report changes nothing. |
+| AL-21..28 | **US only:** a US number (803), the 555 fixtures and Puerto Rico are accepted. Canadian (416, 604, 514, 867, 905, 250) and Caribbean / Atlantic (876, 809, 242, 441) numbers are rejected, on insert and update, as postgres and as the Elf. The check is validated. |
+| AL-29..31 | The phone guard trigger fires before `members_tidy`, and `members_tidy` never touches phone. |
+| AL-32..33 | No function that anon or authenticated can execute calls `net.*`, and `keep_alive()` isn't client-executable. |
+
+Review notes for the lead:
+- **Joe has a manual step.** After buying credit, `last_quota` stays low until Joe runs
+  `update private.text_budget set last_quota = null` (or the new figure). Until then, real sends
+  are refused with `text budget used up`. That fails safe, but it belongs in the README / Joe's
+  checklist.
+- AL-03 and AL-30 match on source text (the cron command, the function body). They're brittle
+  but deliberate.
+- The `+1` exclusion list is copied by hand in `js/phone.js` and the migration. PH-08 and
+  AL-24..26 check the same area codes on both sides, so a drift in those shows up, but a code
+  missing from both lists would not.
 
 ### E2E-ELF: the Elf pages (`tests/e2e/elf.spec.js`, Playwright)
 
@@ -709,6 +743,161 @@ cap still runs: ST-47, CT-05), 2 (yes: ST-25, ST-49, RATE-05), 3 (no: PICK-06, S
 
 ---
 
+## Phase 3: Member page
+
+Spec sections: *Pages* (`/m/#<token>`), *Interface contract → member_view, save_my_list,
+set_list_done*, *Privacy rules*, *Wish list* (including "Lists stay editable after the
+draw"), *Circle details*, *Stack* (escaping, `rel="noopener noreferrer"`), *Access rules →
+Member*, *Shorter links* (16-character tokens). Master plan row 3. The approved look is
+`design/preview.html` mocks (b) editor, (c) everyone's lists and (d) the reveal.
+
+**Lead scope decision (2026-10-24):** the member side of the reveal is built now. When
+`member_view` returns a non-null `match` (circle `sent`), the page shows "You drew {name}!" and
+that member's list. The Elf-side draw UI stays in Phase 4.
+
+**Status key:** every Phase 3 scenario is expected **red** until `m/index.html` and its
+modules exist. The Vitest files load their module with a dynamic import, so a missing module
+turns each test red on its own.
+
+### Interface the tests assume (frontend-builder builds to this)
+
+| Module | Exports |
+|---|---|
+| `m/index.html` | The member page, served at `/m/` (the static server maps `/m/` to `/m/index.html`). |
+| `js/member.js` | The page script (not unit tested; it touches the DOM and supabase-js). |
+| `js/token.js` (pure, no imports) | `tokenFromHash(hash) → string \| null`. Takes `location.hash` (the leading `#` is optional). Returns the token only when it's exactly 16 base64url characters (`A–Z a–z 0–9 - _`), else null. Never throws. |
+| `js/wishlist.js` (pure; may import `./links.js`) | `MAX_WISHES = 10`, `MAX_TEXT = 200`, `MAX_URL = 500`, and `checkList({ about, items }) → { ok, about, items, errors }`. |
+
+`checkList` mirrors `save_my_list` so the page never sends what the database refuses:
+
+```
+input   about: { fav_color, fav_snack, sizes, please_no }   -- any may be missing / null / ''
+        items: [ { text, url } ]                            -- in screen order
+output  about: same four keys; each trimmed, '' -> null
+        items: [ { text, url } ] only (no position; save_my_list uses the array index)
+               text trimmed; url trimmed, '' -> null
+               a row whose text AND url are both blank is dropped (an untouched "Add another wish")
+        errors: [ { field, index?, message } ]
+               field: 'fav_color' | 'fav_snack' | 'sizes' | 'please_no' | 'items' | 'text' | 'url'
+               index: the row's index in the INPUT array (so the page can mark that row)
+               message: a non-empty, kid-friendly sentence; a url error mentions http:// or https://
+        ok: errors.length === 0. When ok, { about, items } are exactly p_about and p_items.
+```
+
+**DOM hooks the e2e relies on** (from the mock and the spec wording):
+
+- `header` holds the circle name, `$budget`, the swap date as `Dec 19` (with or without the
+  weekday) and the place. The page's `h1` is the greeting, `Hi {first name}!`.
+- About me inputs are labelled *Favorite color*, *Favorite snack…*, *Sizes* and *Please no…*.
+- Each wish being edited is a `[data-test="wish-edit"]` element holding inputs labelled
+  *What do you wish for?* and *Link (optional)*, and a *Remove* button. The add button's name
+  matches `/add.*wish/i`. At 10 rows it is disabled or hidden.
+- Wish text and About me inputs have `maxlength="200"`; the link input `maxlength="500"`.
+- A button whose name starts with *Save* saves the list. On success
+  `[data-test="save-status"]` shows text matching `/saved/i`.
+- An invalid field gets `aria-invalid="true"` and an accessible description (the mock's
+  `field__error`, as `js/ui.js` `fieldError` already does).
+- The *I'm done!* button calls `set_list_done(true)`. Afterwards (and after a reload)
+  `[data-test="done-state"]` is visible.
+- Everyone's lists: one `[data-test="person"]` per member, with the name in a heading, About
+  me, the wishes, and `Not done yet` for a member whose list isn't done. A wish link is an
+  `<a href>` with `target="_blank"` and `rel` containing `noopener` and `noreferrer`.
+- The reveal (only when `match` is non-null): text "You drew…", `[data-test="drawn-name"]`
+  with the receiver's first name, and `[data-test="match-list"]` holding the receiver's About me
+  and wishes. While sent, the member can still edit and save their own list (an *Edit my
+  list* button may reveal the editor).
+- An unknown or garbled link shows text matching `/link not found/i` and none of the editor.
+- Changing the fragment in place (a `hashchange`, which is what editing the address bar does)
+  must show the new token's page or "link not found", never the old token's data.
+
+### TOK: token from the fragment (`tests/unit/token.test.js`)
+
+Spec: *Pages* (token in the fragment), *Shorter links* (16 base64url characters), *Access
+rules → Member* (unknown token reveals nothing).
+
+| ID | Scenario |
+|---|---|
+| TOK-01 | `#` + 16 base64url characters gives those 16 characters, case preserved, with `-` and `_` allowed. Without the `#` it works too. |
+| TOK-02 | Empty, `#`, null, undefined, a number and an object give null and never throw. |
+| TOK-03 | 15 or 17 characters give null (the old 32-character tokens too). |
+| TOK-04 | Anything outside base64url gives null: `+`, `/`, `=` padding, `%` escapes, spaces, `<script>`, a second `#`, a `?query`. |
+
+### WL: list validation (`tests/unit/wishlist.test.js`)
+
+Spec: *Wish list*, *Interface contract → save_my_list*, *Data model* (url http/https). The page
+twin of LIST-02..09.
+
+| ID | Scenario |
+|---|---|
+| WL-01 | The limits are exported: 10 wishes, 200 characters of text, 500 of link. |
+| WL-02 | A good list is `ok` with no errors. About me and wish text are trimmed, blanks become null, and links are trimmed. Output items carry only `text` and `url`, in input order. |
+| WL-03 | Missing or null About me fields and a missing `about` give four null fields. |
+| WL-04 | Each About me field: 200 characters accepted, 201 rejected with that field named. |
+| WL-05 | A wish with a link but empty or whitespace-only text is an error on `text` at that row's index. |
+| WL-06 | A row with no text and no link is dropped, not an error, and not counted toward 10. |
+| WL-07 | Wish text of 200 characters is accepted (also with surrounding spaces); 201 is rejected. |
+| WL-08 | 10 wishes are accepted; 11 give an `items` error. |
+| WL-09 | `javascript:` (any case, leading space), `data:`, `vbscript:`, scheme-less (`example.com/socks`) and protocol-relative links are an error on `url` at that row's index, and the message mentions `http`. |
+| WL-10 | A 500-character link is accepted, 501 rejected. An empty link is null and fine. |
+| WL-11 | Several problems give several errors, each pointing at its own row. |
+| WL-12 | The input isn't mutated. |
+
+### E2E-MEM: the member page (`tests/e2e/member.spec.js`, Playwright)
+
+Spec: *Pages*, *The flow* 4 and 8, *Wish list*, *Circle details*, *Privacy rules*, *Access
+rules → Member*, *Stack*.
+
+**Setup** (SQL through `SUPABASE_DB_URL`, in `beforeAll`): three `[e2e]` circles owned by test
+Elf A, each member with a fictional `+1555555 01xx` phone.
+- *open*: Ava (empty list; the happy path), Ben (done, About me, a linked wish, an HTML-looking
+  wish and a 120-character unbroken word), Cy (not done, empty), Dot (empty; the unhappy paths).
+  The circle name itself contains `<i>…</i>`.
+- *drawn*: Gus, Hal, Ivy with matches, status `drawn`.
+- *sent*: Dee → Eli → Fay → Dee, status `sent`; Eli has a list.
+
+Tokens are read server-side and never printed. Assertions about tokens and phones compare
+booleans so a failure message can't print them. `afterAll` sweeps `[e2e]%` circles only (the
+real circle "SecretSanta Test 1" is never touched).
+
+| ID | Scenario |
+|---|---|
+| E2E-MEM-01 | Opening `/m/#<token>` shows the header (circle name, `$20`, `Dec 19`, `Maya's house`) and `Hi Ava!`. |
+| E2E-MEM-02 | Ava fills About me and three wishes (one with an https link) and saves. The database holds the trimmed values with positions 0, 1, 2. After a reload the inputs show them again. |
+| E2E-MEM-03 | Ava edits wish 2 and removes wish 1, then saves. The database holds exactly the two remaining wishes, in order, at positions 0 and 1. |
+| E2E-MEM-04 | *I'm done!* sets `list_done` in the database and shows `[data-test="done-state"]`, which is still there after a reload. |
+| E2E-MEM-05 | Everyone's lists: Ben's About me, wishes and link are shown, in first-name order with the others. Cy shows `Not done yet`. |
+| E2E-MEM-06 | While `open`, there's no "You drew", no `drawn-name` and no `match-list` anywhere in the DOM, and `member_view` answered `match: null`. |
+| E2E-MEM-07 | While `drawn`, the same: no hint of a match anywhere in the DOM, and `opened_at` is still null. |
+| E2E-MEM-08 | **Reveal:** once `sent`, Dee sees "You drew…" with `drawn-name` = Eli and Eli's About me and wishes in `match-list`. `opened_at` is now set for Dee's match only. |
+| E2E-MEM-09 | Once `sent`, Dee can still edit and save her own list, and the database has it ("Lists stay editable after the draw"). |
+| E2E-MEM-10 | **Unhappy:** an unknown 16-character token, a garbled one, an old 32-character one and a page with no fragment each show "link not found", no editor and none of the open circle's names. |
+| E2E-MEM-11 | **Unhappy:** editing the fragment in place to a garbled token shows "link not found" and drops Ava's data. Editing it to a token from another circle shows only that circle, with nothing from Ava's. |
+| E2E-MEM-12 | **Unhappy:** a wish with a link but no text shows an inline error on the text field, and nothing is saved. |
+| E2E-MEM-13 | **Unhappy:** a `javascript:` link and a scheme-less link each show an inline error on the link field, and nothing is saved. |
+| E2E-MEM-14 | **Unhappy:** long text is capped: 250 characters typed into a wish or About me field leave at most 200 (and 500 for a link). Saving stores at most 200. |
+| E2E-MEM-15 | **Unhappy:** after 10 wishes, the add button is disabled or hidden, an 11th row can't be added, and saving stores exactly 10. |
+| E2E-MEM-16 | **Security** (as Cy, so all three RPCs run): the token never appears in any request URL or header. It travels only in POST bodies to `/rest/v1/rpc/…`. The page calls only `member_view`, `save_my_list` and `set_list_done`, never a table endpoint or `send-texts`. |
+| E2E-MEM-17 | **Security:** no member's phone number (including Ava's own) appears in the page or in any response body from Supabase. |
+| E2E-MEM-18 | **Security:** text that looks like HTML (a wish `<img src=x onerror=…>`, an About me `<b>…</b>` and the circle name's `<i>…</i>`) renders as literal text. No element is created and the handler never runs. |
+| E2E-MEM-19 | **Security:** every wish link has `target="_blank"` and a `rel` containing `noopener` and `noreferrer`, in everyone's lists and in the reveal. |
+| E2E-MEM-20 | **Layout:** at 375px wide, the member page (with a 120-character unbroken word) and the reveal page have no horizontal scroll. |
+
+### Open questions (the tests take the reading shown)
+
+1. **Save button or autosave?** The mock shows no Save button, but it does show "Could not save
+   your list". The tests require an explicit button whose name starts with *Save* and a
+   `[data-test="save-status"]` reading "Saved". If the builder prefers autosave, the e2e
+   `save()` helper changes in the same PR.
+2. **Reorder:** the mock has no reorder controls, so nothing tests it. Order is screen order.
+3. **Blank rows:** an untouched extra wish row (no text, no link) is dropped quietly (WL-06). A
+   row with a link but no text is an error (WL-05, E2E-MEM-12).
+4. **Does "I'm done" also save?** Not pinned. The spec says only that it marks the list done.
+5. **Is "me" listed among everyone's lists?** Not pinned either way.
+6. **Undoing "I'm done"** (`set_list_done(false)`) is allowed by the RPC but has no UI in the
+   mock, so nothing tests it.
+
+---
+
 ## Later phases (planned, no test files yet)
 
 These come from the agent brief and the spec, and they get written at the start of their phase.
@@ -716,10 +905,10 @@ These come from the agent brief and the spec, and they get written at the start 
 | Area | Scenario | Spec | Phase | Planned file |
 |---|---|---|---|---|
 | Playwright | Elf: draw, shuffle, send the names, and "Names have already been sent." after | *The flow* 6–9, *Reshuffle* | 4 | `tests/e2e/elf.spec.js` (extend) |
-| Playwright | Member happy path: open link, fill list, I'm done, "You drew" after the draw | *The flow* 4 and 8 | 3, 4 | `tests/e2e/member.spec.js` |
-| Playwright | A member edits the URL fragment to another token | *Privacy rules* | 3 | `tests/e2e/unhappy.spec.js` |
 | Playwright | The Elf tries to shuffle after sending ("Names have already been sent.") | *Reshuffle* | 4 | `tests/e2e/unhappy.spec.js` |
-| Playwright | 375px wide, no horizontal scroll on the member page (the Elf circle page is E2E-ELF-11) | master plan phase 5 | 5 | `tests/e2e/layout.spec.js` |
+
+The member happy path, the edited fragment and the member page at 375px moved into Phase 3
+(E2E-MEM-02..05, 11 and 20). The member's "You drew" moved too (E2E-MEM-08, lead decision).
 
 ---
 

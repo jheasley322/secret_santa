@@ -89,3 +89,19 @@ describe('PH-07 a phone is required (Decision 5)', () => {
     for (const input of ['', '   ', null, undefined]) expect(normalizePhone(input)).toBeNull()
   })
 })
+
+// PH-08 (re-audit finding 3, 2026-10-24): +1 is the whole NANP. Canada and the
+// Caribbean share it, and "US only" (S2) refuses them, matching the database
+// (AL-24..26). US territories are the US. Every number uses the fictional
+// 555-01xx line.
+describe('PH-08 +1 numbers outside the US are rejected', () => {
+  for (const input of ['+1 416 555 0101', '(604) 555-0101', '514-555-0101', '1 867 555 0101', '+19055550101']) {
+    it(`PH-08 Canada: ${input}`, () => { expect(normalizePhone(input)).toBe(null) })
+  }
+  for (const input of ['+1 876 555 0101', '(809) 555-0101', '242-555-0101', '+14415550101']) {
+    it(`PH-08 Caribbean / Atlantic: ${input}`, () => { expect(normalizePhone(input)).toBe(null) })
+  }
+  for (const [input, out] of [['(787) 555-0101', '+17875550101'], ['803-555-0101', '+18035550101'], ['555-555-0101', '+15555550101']]) {
+    it(`PH-08 US and US territories still pass: ${input}`, () => { expect(normalizePhone(input)).toBe(out) })
+  }
+})

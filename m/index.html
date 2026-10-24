@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your Secret Santa</title>
+  <meta name="referrer" content="no-referrer">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="icon" href="../img/gift.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the page</a>
+  <header class="site-header">
+    <div class="snow" aria-hidden="true"></div>
+    <div class="site-header__inner">
+      <img class="brand-mark" src="../img/elf.svg" alt="">
+      <div>
+        <h1 id="greeting">Secret Santa</h1>
+        <p class="site-header__sub" id="circle-sub">Loading&hellip;</p>
+      </div>
+    </div>
+    <div class="site-header__inner">
+      <div class="facts" id="facts"></div>
+    </div>
+  </header>
+
+  <main id="main" class="page stack">
+    <div id="notices" class="stack-sm"></div>
+    <div id="view" class="stack"></div>
+  </main>
+
+  <script type="module" src="../js/member.js"></script>
+</body>
+</html>
