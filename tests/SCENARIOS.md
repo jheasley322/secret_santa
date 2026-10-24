@@ -903,7 +903,7 @@ real circle "SecretSanta Test 1" is never touched).
 Spec sections: *The flow* 6–9, *Reshuffle*, *Peek*, *Re-send*, *Progress* ("after the draw"),
 *Circle status*, *Draw rules*, *Texting* (`kind: 'reveal'`), *Security hardening* S6. The
 approved look is `design/preview.html` mock (a) (the draw card) and (a2) (after the draw).
-**Do-not-pair UI is out of this round** (lead). No-pair rows are seeded by SQL only.
+**Do-not-pair UI is out of this round** (lead). No-pair rows are seeded by SQL only. Its tests are in Phase 4b below.
 
 **Status key:** E2E-DRAW-01..13, 17 and 19 are expected **red** until the Phase 4 UI lands.
 E2E-DRAW-00, 14, 15, 16, 18, 20, 21 and 22 are already green: they pin backend behaviour, or
@@ -993,15 +993,99 @@ behaviour that already exists, and they must stay green.
 
 ---
 
+## Phase 4b: Do-not-pair UI
+
+Spec sections: *Do-not-pair (optional, Elf)* ("Off by default. Nothing appears unless the Elf
+adds a pair."), *Circle status* (no-pair rules can't be changed unless `open`), *Data model*
+`no_pairs` (stored with `member_a < member_b`, unique per circle), *Draw rules*, *Access
+rules*, and the error `Can't make a draw with these do-not-pair rules. Try removing one.`
+The database side is already built and tested (CON-12..14, ELF-12, ISO-04/10, DRAW-05..08,
+LOCK-01/04/06). These tests pin the **UI** on `circle.html`.
+
+**Status key:** E2E-NP-01..14 are expected **red** until the do-not-pair UI lands.
+E2E-NP-00, 15, 16 and 17 pin existing behaviour (the guard, "not found" for another Elf, RLS)
+and must stay green.
+
+### Safety
+
+- Same fixtures as Phase 4: send-texts is stubbed, textbelt.com is aborted, and nothing in this
+  file sends a text at all.
+- Circles are `[e2e] nopairs <key> <run>`, owned by test Elf A, with phones `+1555555030x`.
+  `beforeAll` sweeps and seeds, `afterAll` sweeps, and nothing is deleted by any other key.
+- **E2E-NP-00 / 17:** every circle **not** named `[e2e]%` (including Joe's real "SecretSanta
+  Test 1") is snapshotted before the run: status, name, member count, **no-pairs**, matches and
+  text count. It must be identical after the run.
+
+### E2E-NP: the do-not-pair section (`tests/e2e/nopairs.spec.js`, Playwright)
+
+| ID | Scenario | Spec |
+|---|---|---|
+| E2E-NP-00 | Seeding changed no circle outside `[e2e]`. | Joe's rule |
+| E2E-NP-01 | **Off by default:** an open circle with no pairs shows only the quiet label "Never pair these two (optional)". The selects, the Add button and any pair rows are hidden until the label is clicked. Then both selects offer exactly this circle's kids. | *Do-not-pair* |
+| E2E-NP-02 | **Unhappy:** picking the same kid in both selects and tapping Add shows an inline `[data-test="nopair-error"]` mentioning "different". No row is written. | *Do-not-pair*, CON-12 |
+| E2E-NP-03 | **Happy:** adding Ava + Zed with the **larger member id picked first** writes one row with `member_a < member_b` (the UI sorts; the database would refuse the other order). It lists as "Ava ✕ Zed", has no error, survives a reload, and uses no native dialog. | *Data model* `no_pairs` |
+| E2E-NP-04 | **Unhappy:** adding the same pair again, as Zed + Ava and as Ava + Zed, shows a friendly error mentioning "already", never the raw database text ("duplicate key", "violates", "constraint", "23505"). Still one row. | *Data model* (unique per circle) |
+| E2E-NP-05 | **Remove** on one pair row deletes that pair only (DB and list). It needs no native dialog, and the kids are untouched. | *Do-not-pair* |
+| E2E-NP-06 | A kid added through the Add a kid form appears in both selects without a reload. | *Do-not-pair* |
+| E2E-NP-07 | **Unhappy:** pairs added **on the page** (Ava ✕ Ben, Cy + Ava) make a 3-kid draw impossible. Draw names shows exactly "Can't make a draw with these do-not-pair rules. Try removing one.". The circle stays `open` with no matches, and the pairs are still listed with Remove. | *Do-not-pair*, *Draw rules* |
+| E2E-NP-08 | A pair added on the page (Ben + Ava) is honoured by Draw names and by 8 Shuffle again taps. After each one, SQL shows 4 matches with no Ava → Ben, no Ben → Ava and no self-match. | *Draw rules* |
+| E2E-NP-09 | **`drawn`:** existing pairs are shown **read-only**: the rows show, but there are no selects, no Add and no Remove. The row is unchanged in the DB. | *Circle status* |
+| E2E-NP-10 | **`drawn` with no pairs:** the section isn't shown at all (no label, no selects). | *Do-not-pair* ("nothing appears unless…") |
+| E2E-NP-11 | **`sent`:** same as NP-09, read-only. | *Circle status* |
+| E2E-NP-12 | After **Undo draw**, the section is editable again (Add and Remove are back). | *Circle status*, LOCK-06 |
+| E2E-NP-13 | A kid named `<img src=x onerror=alert(1)>` shows as literal text in the select and the pair row. No `<img>` appears in the section, and no dialog fires. | Rule 7 (escape everything) |
+| E2E-NP-14 | **375px:** with a 40-character name in the circle, the open section, both selects and Add stay within 375px. Native selects size themselves to their longest option, so they need `max-width: 100%` or similar. The page doesn't scroll sideways before or after adding the pair, and the new row fits. | Brief |
+| E2E-NP-15 | **Unhappy:** Elf B opening Elf A's circle sees "Circle not found", no do-not-pair section, and no names or "✕". | *Access rules* |
+| E2E-NP-16 | **Unhappy:** Elf B, through the API, reads no pairs of A's circle, can't insert one, and a delete changes nothing. | *Access rules* (RLS) |
+| E2E-NP-17 | The whole run changed no circle outside `[e2e]`. | Joe's rule |
+
+### UI contract for the builder (pinned by the tests)
+
+- One container `[data-test="nopairs"]` on `circle.html`. While `open` it holds a visible,
+  quiet label with the exact text **`Never pair these two (optional)`**. Clicking that text
+  reveals the controls; a `<details>`/`<summary>` is the obvious fit. The tests click it only
+  when the controls aren't already visible, so it may start expanded when pairs exist.
+- Controls (only while `open`): `<select data-test="nopair-a">` and
+  `<select data-test="nopair-b">`. Each `<option>` has the kid's first name as its label (a
+  placeholder option with `value=""` is allowed and ignored). There's a button inside the
+  container named `Add` or `Add pair`.
+- On Add, the UI sorts the two member ids so that `member_a < member_b` before inserting.
+- `[data-test="nopair-error"]` is an inline error: it mentions "different" for the same kid
+  twice and "already" for a duplicate (either order; check locally or map Postgres `23505`).
+  Never the raw database message.
+- Each pair is a `[data-test="nopair-row"]` whose text is `Name ✕ Name` (U+2715). Either name
+  order is accepted. While `open` it has a `Remove` button that deletes straight away (no
+  native `confirm`).
+- `drawn` / `sent`: **read-only**. The rows show, with no selects, no Add and no Remove. If
+  there are no pairs, the whole section is hidden. *(Chosen for the "pick one" in the brief:
+  read-only, so the Elf can see why a shuffle never pairs siblings.)*
+- Draw errors are already shown verbatim (E2E-DRAW-03). NP-07 checks the same thing with pairs
+  made on the page.
+- Names are rendered with `textContent` (selects and rows).
+- At 375px nothing passes the viewport's right edge, even with a 40-character name.
+
+### Open questions (the tests take the reading shown)
+
+1. **Read-only or hidden after the draw?** Read-only (NP-09/11), and hidden when there are no
+   pairs (NP-10).
+2. **Confirm before Remove?** None. A pair is cheap to re-add. The tests fail if a native
+   `confirm` blocks it.
+3. **Error wording** is pinned only loosely ("different", "already"), so the builder can
+   phrase it kindly.
+4. **Removing a kid who is in a pair** cascades in the DB. That isn't pinned here; the list
+   should simply re-render.
+
+---
+
 ## Later phases (planned, no test files yet)
 
 These come from the agent brief and the spec, and they get written at the start of their phase.
 
 | Area | Scenario | Spec | Phase | Planned file |
 |---|---|---|---|---|
-| Playwright | Do-not-pair UI (add/remove pairs, frozen after the draw) | *Do-not-pair* | 4b | `tests/e2e/draw.spec.js` (extend) |
+| (none right now) | | | | |
 
-The Elf draw/shuffle/send and "shuffle after sending" moved into Phase 4 (E2E-DRAW). The member happy path, the edited fragment and the member page at 375px moved into Phase 3
+The Elf draw/shuffle/send and "shuffle after sending" moved into Phase 4 (E2E-DRAW). The do-not-pair UI moved into Phase 4b (E2E-NP, `tests/e2e/nopairs.spec.js`). The member happy path, the edited fragment and the member page at 375px moved into Phase 3
 (E2E-MEM-02..05, 11 and 20). The member's "You drew" moved too (E2E-MEM-08, lead decision).
 
 ---

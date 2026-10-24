@@ -25,7 +25,7 @@ export function notify (kind, text) {
   const box = document.getElementById('notices')
   const icon = kind === 'bad' ? '⚠' : kind === 'ok' ? '✓' : 'ℹ'
   const n = h('div', { class: `notice notice--${kind}`, role: kind === 'bad' ? 'alert' : 'status' },
-    h('span', { class: 'notice__text' }, h('span', { 'aria-hidden': 'true' }, icon), ' ', text),
+    h('span', { class: 'notice__text' }, h('span', { 'aria-hidden': 'true' }, icon), ' ', h('span', { class: 'notice__msg' }, text)),
     h('button', { class: 'btn btn--small', type: 'button', onclick: () => n.remove() }, 'Dismiss'))
   box.append(n)
   return n

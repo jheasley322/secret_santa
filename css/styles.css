@@ -278,6 +278,18 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 }
 .wishes a { display: inline-block; min-height: var(--tap); padding-top: 0.5rem; font-weight: 700; }
 .wishes__body { min-width: 0; }
+/* Do-not-pair: selects never outgrow the card, even with a 40-character name */
+.select {
+  display: block; width: 100%; max-width: 100%; min-width: 0; min-height: 3rem; padding: var(--sp-2) var(--sp-3);
+  font: inherit; font-size: var(--fs-0); color: var(--ink); background: var(--field-bg);
+  border: 2px solid var(--field-border); border-radius: var(--radius-sm); text-overflow: ellipsis;
+}
+.select:focus-visible { border-color: var(--focus); outline-offset: 2px; }
+.pair-list { list-style: none; margin: 0; padding: 0; }
+.pair-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) 0; }
+.pair-row + .pair-row { border-top: 2px dashed var(--field-border); }
+.pair-row__names { flex: 1 1 10rem; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+.pair-row__x { color: var(--accent); padding: 0 var(--sp-1); }
 details.person-fold > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; gap: var(--sp-2); font-weight: 700; }
 
 /* ---------- 14. The reveal ---------- */

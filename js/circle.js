@@ -20,6 +20,7 @@ let circle = null
 let members = []
 let texts = []
 let matches = []
+let noPairs = []
 let practice = false
 let sendResults = []
 
@@ -46,6 +47,7 @@ async function load () {
   await loadMembers()
   await loadTexts()
   await loadMatches()
+  await loadNoPairs()
   render()
 }
 
@@ -75,6 +77,12 @@ async function loadMatches () {
   matches = data
 }
 
+async function loadNoPairs () {
+  const { data, error } = await supabase.from('no_pairs').select('member_a, member_b').eq('circle_id', circleId)
+  if (error) { notify('bad', "Couldn't load the never-pair list. Reload the page to try again."); return }
+  noPairs = data
+}
+
 async function refresh () {
   const { data } = await supabase.from('circles')
     .select('id, name, budget, swap_date, swap_place, status').eq('id', circleId).maybeSingle()
@@ -82,6 +90,7 @@ async function refresh () {
   await loadMembers()
   await loadTexts()
   await loadMatches()
+  await loadNoPairs()
   render()
 }
 
@@ -103,9 +112,100 @@ function render () {
 
   $('practice-banner').hidden = !practice
   renderDraw()
+  renderNoPairs()
   renderProgress()
   renderMembers()
   fillDetails()
+}
+
+// ------------------------------------------------------------------ do-not-pair
+let npOpen = false
+let npErrorText = ''
+
+function npSelect (id, label, keep) {
+  const sel = h('select', { class: 'select', id, 'data-test': id === 'np-a' ? 'nopair-a' : 'nopair-b',
+    onchange: () => { npErrorText = ''; const e = $('np-error'); if (e) { e.replaceChildren(); e.hidden = true } } },
+    h('option', { value: '' }, 'Choose a kid'),
+    ...members.map(m => h('option', { value: m.id }, m.first_name)))
+  if (members.some(m => m.id === keep)) sel.value = keep
+  return h('div', { class: 'field' }, h('label', { class: 'field__label', for: id }, label), sel)
+}
+
+function npError (msg) {
+  npErrorText = msg ?? ''
+  const el = $('np-error')
+  if (!el) return
+  el.replaceChildren(...(msg ? [h('span', { 'aria-hidden': 'true' }, '⚠'), ' ', msg] : []))
+  el.hidden = !msg
+}
+
+/** Built fresh each time; absent (not just hidden) when the Elf has nothing to see. */
+function renderNoPairs () {
+  const mount = $('nopairs-mount')
+  const open = circle.status === 'open'
+  const keepA = $('np-a')?.value
+  const keepB = $('np-b')?.value
+  const rows = noPairs.filter(p => members.some(m => m.id === p.member_a) && members.some(m => m.id === p.member_b))
+  if (!open && rows.length === 0) { mount.replaceChildren(); return }
+
+  const list = h('ul', { class: 'pair-list', 'aria-label': 'Pairs that will not be drawn' },
+    rows.map(p => h('li', { class: 'pair-row', 'data-test': 'nopair-row' },
+      h('span', { class: 'pair-row__names' }, nameOf(p.member_a), h('span', { class: 'pair-row__x' }, '✕'), nameOf(p.member_b)),
+      open ? h('button', { class: 'btn btn--small btn--quiet', type: 'button',
+        'aria-label': `Remove the ${nameOf(p.member_a)} and ${nameOf(p.member_b)} pair`,
+        onclick: e => removePair(e.currentTarget, p) }, 'Remove') : null)))
+  list.hidden = rows.length === 0
+
+  const form = open
+    ? h('form', { id: 'np-form', novalidate: true, onsubmit: onPairSubmit },
+      h('div', { class: 'field-grid' }, npSelect('np-a', 'First kid', keepA), npSelect('np-b', 'Second kid', keepB)),
+      h('p', { class: 'field__error', id: 'np-error', 'data-test': 'nopair-error', role: 'alert', hidden: true }),
+      h('button', { class: 'btn btn--secondary btn--block', type: 'submit' }, 'Add pair'))
+    : null
+
+  const details = h('details', { class: 'person-fold', id: 'nopairs', 'data-test': 'nopairs', open: npOpen },
+    h('summary', {}, 'Never pair these two (optional)'),
+    h('div', { class: 'stack-sm' },
+      open ? h('p', { class: 'muted' }, 'Kids who must not draw each other, in either direction. Brothers and sisters, for example.') : null,
+      list, form))
+  details.addEventListener('toggle', () => { npOpen = details.open })
+  mount.replaceChildren(h('section', { class: 'card' }, details))
+  if (npErrorText) npError(npErrorText)
+}
+
+function onPairSubmit (e) {
+  e.preventDefault()
+  const a = $('np-a').value
+  const b = $('np-b').value
+  if (!a || !b) { npError('Pick two kids.'); return }
+  if (a === b) { npError('Pick two different kids.'); return }
+  // The table stores each pair once, smaller id first.
+  const [member_a, member_b] = a < b ? [a, b] : [b, a]
+  if (noPairs.some(p => p.member_a === member_a && p.member_b === member_b)) {
+    npError('That pair is already on the list.'); return
+  }
+  busy(e.submitter ?? e.target.querySelector('button'), async () => {
+    const { error } = await supabase.from('no_pairs').insert({ circle_id: circleId, member_a, member_b })
+    if (error) {
+      if (error.code === '23505') npError('That pair is already on the list.')
+      else if (/locked/i.test(error.message ?? '')) npError("The names are drawn, so the list can't change now.")
+      else npError("Couldn't add that pair. Try again.")
+      return
+    }
+    npError(null)
+    await loadNoPairs()
+    renderNoPairs()
+  })
+}
+
+function removePair (button, p) {
+  return busy(button, async () => {
+    const { error } = await supabase.from('no_pairs').delete()
+      .eq('circle_id', circleId).eq('member_a', p.member_a).eq('member_b', p.member_b)
+    if (error) { notify('bad', "Couldn't remove that pair. Try again."); return }
+    await loadNoPairs()
+    renderNoPairs()
+  })
 }
 
 function renderProgress () {
@@ -357,6 +457,7 @@ function removeMember (button, m) {
     if (error) { notify('bad', `Couldn't remove ${m.first_name}. ${/locked/.test(error.message ?? '') ? 'The names are already drawn.' : 'Try again.'}`); return }
     await loadMembers()
     await loadTexts()
+    await loadNoPairs()
     render()
   })
 }
