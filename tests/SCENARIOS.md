@@ -898,16 +898,110 @@ real circle "SecretSanta Test 1" is never touched).
 
 ---
 
+## Phase 4: Elf draw and reveal
+
+Spec sections: *The flow* 6–9, *Reshuffle*, *Peek*, *Re-send*, *Progress* ("after the draw"),
+*Circle status*, *Draw rules*, *Texting* (`kind: 'reveal'`), *Security hardening* S6. The
+approved look is `design/preview.html` mock (a) (the draw card) and (a2) (after the draw).
+**Do-not-pair UI is out of this round** (lead). No-pair rows are seeded by SQL only.
+
+**Status key:** E2E-DRAW-01..13, 17 and 19 are expected **red** until the Phase 4 UI lands.
+E2E-DRAW-00, 14, 15, 16, 18, 20, 21 and 22 are already green: they pin backend behaviour, or
+behaviour that already exists, and they must stay green.
+
+### Safety
+
+- `send-texts` is intercepted on every page by the stub in `tests/e2e/support/fixtures.mjs`, and
+  textbelt.com is aborted. The stub now behaves like the real function for reveals: a
+  whole-circle reveal needs `drawn` and moves the circle to `sent` **before** any row is
+  written. A one-member reveal needs `sent`. It writes `dry_run = true` rows and answers
+  `dry_run: true`. A test can make chosen members come back `failed` or `skipped` through the
+  `sendStub` fixture.
+- Circles are `[e2e] draw <key> <run>`, owned by test Elf A, with phones `+1555555020x`.
+  `beforeAll` sweeps and seeds, `afterAll` sweeps. Nothing is deleted by any other key.
+- **E2E-DRAW-00 / 22:** every circle **not** named `[e2e]%` (including Joe's real "SecretSanta
+  Test 1") is snapshotted before the run: status, name, member count, matches and text count.
+  It must be identical after the run.
+
+### E2E-DRAW: the Elf's draw and reveal (`tests/e2e/draw.spec.js`, Playwright)
+
+| ID | Scenario | Spec |
+|---|---|---|
+| E2E-DRAW-00 | Seeding changed no circle outside `[e2e]`. | Joe's rule |
+| E2E-DRAW-01 | **Unhappy:** with 2 members (both done), **Draw names** is disabled and `[data-test="draw-reason"]` says "at least 3". | *Draw rules* |
+| E2E-DRAW-02 | **Unhappy:** with Cy's list not done, Draw names is disabled. The reason says "every list must be done" and names Cy but not Ava (mock a: "Waiting for Zoe's list…"). | *Draw rules*, mock (a) |
+| E2E-DRAW-03 | **Unhappy:** with seeded no-pairs that make every draw impossible, tapping Draw names shows "Can't make a draw with these do-not-pair rules. Try removing one." The circle stays `open` with no matches. | *Do-not-pair*, *Draw rules* |
+| E2E-DRAW-04 | **Happy:** with 3 members all done, Draw names is enabled. Tapping it makes the circle `drawn` with 3 matches. Shuffle again, Undo draw and Send the names appear, and Draw names goes away. Show matches is unchecked, no match row is visible, and no "Giver → Receiver" text is on screen. | *The flow* 6, *Peek* |
+| E2E-DRAW-05 | **Undo draw** returns the circle to `open` and deletes the matches, and Draw names is back. An in-page confirm is tolerated but not required. | *Circle status* |
+| E2E-DRAW-06 | **Happy:** draw again, then **Send the names**. An in-page `<dialog data-test="confirm-send">` opens with the exact confirm text **and** "Practice mode: no real texts". Nothing is sent before confirming. Confirming sends one request, `{ circle_id, kind: 'reveal' }` with the Bearer JWT. The circle becomes `sent`, and each member's `[data-test="send-result"]` says sent. The practice banner shows. "Names have already been sent." appears, Undo/Draw are gone and Shuffle is gone or disabled. No native `alert`/`confirm` fired. | *The flow* 7, *Reshuffle*, S6 |
+| E2E-DRAW-07 | **Show matches** (`[data-test="show-matches"]`) is off by default. When on, it lists exactly the `matches` table as `[data-test="match-row"]` "Giver → Receiver". It turns off again, and after a reload it is off (not remembered). | *Peek* |
+| E2E-DRAW-08 | **Shuffle again** calls `reshuffle`. Within 10 shuffles of a 3-member circle the matches change (only 2 derangements exist), the circle stays `drawn`, and any match list on screen is the current draw, never a stale one. | *Reshuffle*, *Draw rules* |
+| E2E-DRAW-09 | **Unhappy:** Cancel in the confirm sends nothing and leaves the draw and status unchanged. The dialog closes, and no native dialog fired. | *The flow* 7, S6 |
+| E2E-DRAW-10 | Per-member results come **from the response**. With the stub returning Ava sent, Ben failed and Cy skipped, each `send-result` says so. Cy's "skipped" writes no row, so it can only come from the response. Ben's row pill reads "Text failed". | *The flow* 9, *Texting* |
+| E2E-DRAW-11 | The drawn page, with matches shown and with the confirm open, has no horizontal scroll at 375px. | Brief |
+| E2E-DRAW-12 | **Unhappy (shuffle after sending):** a `sent` circle shows "Names have already been sent.". There's no Draw names, Undo draw or Send the names, and Shuffle again is absent or disabled. | *Reshuffle*, *Circle status* |
+| E2E-DRAW-13 | In a `sent` circle each row shows its **reveal** text status (Ava "Text sent", Ben "Text failed", Cy "Not sent yet"). Ava, whose `matches.opened_at` is set, shows "Opened ✓", and Ben and Cy show "Not opened yet". | *Progress*, *The flow* 9 |
+| E2E-DRAW-14 | Re-send on one row of a `sent` circle sends `{ circle_id, kind: 'reveal', member_id }`. | *Re-send* |
+| E2E-DRAW-15 | **Unhappy:** Elf A calling `reshuffle` / `undo_draw` / `start_draw` on a `sent` circle is refused ("names have already been sent/drawn"), and the matches are unchanged. | *Reshuffle*, contract errors |
+| E2E-DRAW-16 | The sent page has no horizontal scroll at 375px. | Brief |
+| E2E-DRAW-17 | The practice banner shows **on load** when the circle's most recent `texts` row has `dry_run = true`. | S6 |
+| E2E-DRAW-18 | The banner does **not** show when the most recent row is a real send (`dry_run = false`; a seeded log row, nothing texted). | S6 |
+| E2E-DRAW-19 | The banner shows after any send whose response has `dry_run: true` (here, a Re-send invite in a circle whose last row was real). | S6 |
+| E2E-DRAW-20 | **Unhappy:** Elf B opening Elf A's circle sees "Circle not found", no draw or shuffle controls, and none of the kids' names. | *Access rules* |
+| E2E-DRAW-21 | **Unhappy:** Elf B calling `start_draw` / `reshuffle` / `undo_draw` on Elf A's circles gets `circle not found`, and nothing changes. | *Access rules*, contract errors |
+| E2E-DRAW-22 | The whole run changed no circle outside `[e2e]`. | Joe's rule |
+
+### UI contract for the builder (pinned by the tests)
+
+- **Buttons** (accessible names, exact): `Draw names`, `Shuffle again`, `Undo draw`,
+  `Send the names`. Draw names is shown only while `open`. Disabled means native `disabled` or
+  `aria-disabled="true"` (mock a uses `aria-disabled`; Playwright accepts both).
+- `[data-test="draw-reason"]`: why Draw names is disabled. It says "at least 3" for fewer than 3
+  members. With an unfinished list it says "every list must be done" and names the kids who
+  aren't done.
+- Draw errors from the RPC are shown verbatim (e.g. the do-not-pair message).
+- `[data-test="show-matches"]`: a checkbox (`role="switch"`, as in mock a2), unchecked on every
+  load. When on, each match is a visible `[data-test="match-row"]` whose text is
+  `Giver → Receiver` (U+2192, single spaces), read from the `matches` table. When off, no
+  match row is visible.
+- `<dialog data-test="confirm-send">` opened with `showModal()` (never `window.confirm`). It
+  contains `This texts everyone who they drew and locks the draw. You can't shuffle after this.`
+  In practice mode it also contains `Practice mode: no real texts`. Its buttons are one whose
+  name contains "Send the names" (confirm) and one named "Cancel".
+- After a send: one `[data-test="send-result"][data-member-id="<member id>"]` per result in the
+  response, containing the first name and `sent`, `failed` or `skipped`.
+- `sent`: the text `Names have already been sent.` is visible. Each member row
+  (`[data-test="member-row"]`) shows `Opened ✓` or `Not opened yet` from `matches.opened_at`
+  (the giver's match row), next to the existing reveal text pill.
+- `[data-test="practice-banner"]` containing `Practice mode: no real texts`. It shows on load
+  when the circle's newest `texts` row (by `created_at`) is a dry run, and after any send-texts
+  response with `dry_run: true`.
+
+### Open questions (the tests take the reading shown)
+
+1. **Shuffle after sending: absent or disabled?** The spec (*Reshuffle*) says disabled with the
+   note "Names have already been sent."; the lead says no shuffle controls. The tests accept
+   either, and require the note.
+2. **Practice mode with no texts yet.** The UI can't know until the first send. The confirm then
+   can't say "Practice mode". Not pinned. In E2E-DRAW-06 the circle has dry-run invites, so the
+   phrase is required.
+3. **Undo draw confirmation:** not specified. The tests tolerate an in-page one.
+4. **Does Peek stay on after Shuffle again?** Not pinned. Either way, what's shown must be the
+   current draw.
+5. **Remove member uses `window.confirm`** today (Phase 2). The no-native-dialog rule is pinned
+   only for Send the names.
+
+---
+
 ## Later phases (planned, no test files yet)
 
 These come from the agent brief and the spec, and they get written at the start of their phase.
 
 | Area | Scenario | Spec | Phase | Planned file |
 |---|---|---|---|---|
-| Playwright | Elf: draw, shuffle, send the names, and "Names have already been sent." after | *The flow* 6–9, *Reshuffle* | 4 | `tests/e2e/elf.spec.js` (extend) |
-| Playwright | The Elf tries to shuffle after sending ("Names have already been sent.") | *Reshuffle* | 4 | `tests/e2e/unhappy.spec.js` |
+| Playwright | Do-not-pair UI (add/remove pairs, frozen after the draw) | *Do-not-pair* | 4b | `tests/e2e/draw.spec.js` (extend) |
 
-The member happy path, the edited fragment and the member page at 375px moved into Phase 3
+The Elf draw/shuffle/send and "shuffle after sending" moved into Phase 4 (E2E-DRAW). The member happy path, the edited fragment and the member page at 375px moved into Phase 3
 (E2E-MEM-02..05, 11 and 20). The member's "You drew" moved too (E2E-MEM-08, lead decision).
 
 ---

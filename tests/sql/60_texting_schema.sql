@@ -28,7 +28,7 @@ select col_type_is('private', 'text_budget', 'cap', 'integer', 'TXB-02 cap is in
 select col_not_null('private', 'text_budget', 'cap', 'TXB-02 cap is not null');
 select col_default_is('private', 'text_budget', 'cap', '45', 'TXB-02 cap defaults to 45');
 select is((select count(*) from private.text_budget), 1::bigint, 'TXB-03 text_budget holds exactly one row');
-select is((select cap from private.text_budget), 45, 'TXB-03 the starting cap is 45');
+select is((select column_default from information_schema.columns where table_schema = 'private' and table_name = 'text_budget' and column_name = 'cap'), '45', 'TXB-03 the cap column defaults to 45 (Joe raises the live value by SQL; spec HARD LIMITS)');
 select is(pg_temp.outcome($$insert into private.text_budget (cap) values (100)$$), 'rejected',
           'TXB-03 a second budget row is rejected');
 

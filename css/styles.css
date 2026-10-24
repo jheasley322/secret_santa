@@ -212,7 +212,8 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 
 /* ---------- 11. Toggle switch ("Show matches") ---------- */
 .toggle { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--tap); font-weight: 700; cursor: pointer; }
-.toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.toggle { position: relative; }
+.toggle input { position: absolute; left: 0; top: 50%; transform: translateY(-50%); z-index: 1; margin: 0; opacity: 0; width: 3.5rem; height: 2.75rem; cursor: pointer; }
 .toggle__track {
   position: relative; flex: none; width: 3.5rem; height: 2rem; border: var(--line) solid var(--outline); border-radius: 999px; background: var(--tint);
 }
@@ -314,3 +315,10 @@ details.person-fold > summary { cursor: pointer; min-height: var(--tap); display
 ul.help-list { list-style: disc; }
 ol.help-list { list-style: decimal; }
 .help-list li { padding-left: var(--sp-1); }
+
+/* ---------- 13. Draw and reveal ---------- */
+.match-list { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: grid; gap: var(--sp-2); }
+.match-list li { padding: var(--sp-3) var(--sp-4); border: var(--line) solid var(--outline); border-radius: var(--radius-sm); background: var(--tint); font-weight: 700; overflow-wrap: anywhere; }
+.dialog { width: min(92vw, 28rem); max-width: 92vw; padding: var(--sp-5); border: var(--line) solid var(--outline); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); }
+.dialog::backdrop { background: rgb(0 0 0 / 0.6); }
+.dialog .btn-row { margin-top: var(--sp-4); }

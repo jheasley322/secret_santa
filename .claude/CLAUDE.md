@@ -68,7 +68,7 @@ Each phase in .zReference/master_plan.md runs in the same order. 1) test-author 
 7. **Escape everything rendered.** Prefer `textContent`.
 8. **Never commit, print or set secrets.** `TEXTBELT_KEY` and the service-role key are Joe's to
    set. `.gitignore` covers `.env*`.
-9. **HARD LIMIT on texts (Joe's orders).** The Textbelt balance is **200 credits** (2026-10-24), with the cap set to 195 to keep 5 in reserve. Only Joe changes it.
+9. **HARD LIMIT on texts (Joe's orders).** The Textbelt balance is **749 credits** (2026-10-24, as Textbelt reported it), with the cap set to 745 to keep 5 in reserve. Only Joe changes it.
    - **No agent ever sends a real text.** Tests and development use `TEXTS_DRY_RUN=true`, and
      a missing value means dry run.
    - **No real text containing a link** may be sent until Joe says the Textbelt URL whitelist

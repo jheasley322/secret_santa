@@ -1,6 +1,6 @@
 // Circle dashboard for the Elf: details, kids (name + mobile), text status,
 // Send invites / Re-send / Copy link, and the wish-list progress checklist.
-// Draw, Shuffle again and Send the names come in Phase 4.
+// Phase 4: Draw names, Shuffle again, Undo draw, Show matches, Send the names.
 //
 // Text status comes from the `texts` table, never from a button having been
 // tapped (frontend rule 6). Hiding a button is cosmetic: RLS and the
@@ -19,6 +19,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 let circle = null
 let members = []
 let texts = []
+let matches = []
+let practice = false
+let sendResults = []
 
 // ------------------------------------------------------------------ loading
 function showNotFound () {
@@ -42,6 +45,7 @@ async function load () {
   circle = data
   await loadMembers()
   await loadTexts()
+  await loadMatches()
   render()
 }
 
@@ -59,6 +63,26 @@ async function loadTexts () {
     .select('member_id, kind, status, dry_run, error, created_at').in('member_id', ids).order('created_at')
   if (error) { notify('bad', "Couldn't load text status. Reload the page to try again."); return }
   texts = data
+  // Practice mode: the circle's newest text was a dry run (S6).
+  practice = data.length > 0 && data[data.length - 1].dry_run === true
+}
+
+/** The Elf may read matches. Only fetched once names are drawn (Show matches is still off by default). */
+async function loadMatches () {
+  if (circle.status === 'open') { matches = []; return }
+  const { data, error } = await supabase.from('matches').select('giver_id, receiver_id, opened_at').eq('circle_id', circleId)
+  if (error) { notify('bad', "Couldn't load the draw. Reload the page to try again."); return }
+  matches = data
+}
+
+async function refresh () {
+  const { data } = await supabase.from('circles')
+    .select('id, name, budget, swap_date, swap_place, status').eq('id', circleId).maybeSingle()
+  if (data) circle = data
+  await loadMembers()
+  await loadTexts()
+  await loadMatches()
+  render()
 }
 
 // ------------------------------------------------------------------ render
@@ -77,6 +101,8 @@ function render () {
   $('locked-note').hidden = open
   $('invite-box').hidden = circle.status === 'sent' || members.length === 0
 
+  $('practice-banner').hidden = !practice
+  renderDraw()
   renderProgress()
   renderMembers()
   fillDetails()
@@ -111,6 +137,90 @@ function textPill (m) {
     t.dry_run ? ' Text sent (practice run)' : ' Text sent')
 }
 
+const nameOf = id => members.find(m => m.id === id)?.first_name ?? 'Someone'
+
+function renderDraw () {
+  const status = circle.status
+  const card = $('draw-card')
+  card.hidden = false
+  const open = status === 'open'
+  const drawn = status === 'drawn'
+  const sent = status === 'sent'
+  $('draw-btn').hidden = !open
+  $('send-names').hidden = !drawn
+  $('shuffle-btn').hidden = !drawn
+  $('undo-btn').hidden = !drawn
+  $('peek-box').hidden = open
+  $('draw-title').textContent = open ? 'Draw the names' : drawn ? 'Send the names' : 'Names sent'
+
+  const intro = $('draw-intro')
+  intro.replaceChildren()
+  if (open) intro.textContent = 'When every wish list is done, draw the names. Nobody is told until you send them.'
+  else if (drawn) intro.textContent = 'You can shuffle as often as you like. Once you send the names, the draw is final.'
+  else intro.textContent = 'Names have already been sent.'
+
+  // Draw rules (the database enforces them too; this only explains).
+  const reason = $('draw-reason')
+  const notDone = members.filter(m => !m.list_done).map(m => m.first_name)
+  const why = []
+  if (members.length < 3) why.push('You need at least 3 kids to draw names.')
+  if (notDone.length) why.push(`Every list must be done first. Waiting for ${notDone.join(', ')}.`)
+  reason.hidden = !open || why.length === 0
+  reason.textContent = why.join(' ')
+  $('draw-btn').disabled = why.length > 0
+
+  const results = $('send-results')
+  results.replaceChildren(...sendResults.map(r => h('li', { class: 'check-row', 'data-test': 'send-result', 'data-member-id': r.member_id },
+    h('span', { class: 'check-row__icon', 'aria-hidden': 'true' }, r.status === 'sent' ? '✓' : '⚠'),
+    h('div', {}, h('div', { class: 'check-row__name' }, `${nameOf(r.member_id)}: ${r.status}`),
+      r.error ? h('div', { class: 'muted' }, r.error) : null))))
+  results.hidden = sendResults.length === 0
+  renderPeek()
+}
+
+function renderPeek () {
+  const list = $('match-list')
+  const on = $('show-matches').checked && circle.status !== 'open'
+  list.replaceChildren(...(on ? matches.map(x => h('li', { 'data-test': 'match-row' }, `${nameOf(x.giver_id)} → ${nameOf(x.receiver_id)}`)) : []))
+  list.hidden = !on
+}
+$('show-matches').addEventListener('change', renderPeek)
+
+$('draw-btn').addEventListener('click', e => busy(e.currentTarget, () => drawAction('start_draw')))
+$('shuffle-btn').addEventListener('click', e => busy(e.currentTarget, () => drawAction('reshuffle')))
+$('undo-btn').addEventListener('click', e => busy(e.currentTarget, async () => {
+  if (await drawAction('undo_draw')) $('show-matches').checked = false
+}))
+
+async function drawAction (fn) {
+  sendResults = []
+  const { error } = await supabase.rpc(fn, { p_circle_id: circleId })
+  if (error) notify('bad', error.message || "That didn't work. Try again.")
+  await refresh()
+  return !error
+}
+
+const dlg = $('confirm-send')
+$('send-names').addEventListener('click', () => {
+  $('cs-practice').hidden = !practice
+  dlg.showModal()
+})
+$('cs-cancel').addEventListener('click', () => dlg.close())
+$('cs-ok').addEventListener('click', e => busy(e.currentTarget, async () => {
+  dlg.close()
+  const r = await callSendTexts({ circle_id: circleId, kind: 'reveal' })
+  if (r) sendResults = r.results ?? []
+  await afterSend(r)
+}))
+
+function openedPill (m) {
+  if (circle.status !== 'sent') return null
+  const x = matches.find(k => k.giver_id === m.id)
+  return x?.opened_at
+    ? h('span', { class: 'pill pill--ok' }, 'Opened ✓')
+    : h('span', { class: 'pill pill--info' }, 'Not opened yet')
+}
+
 function renderMembers () {
   const list = $('member-list')
   const open = circle.status === 'open'
@@ -121,7 +231,7 @@ function renderMembers () {
       h('div', {},
         h('div', { class: 'check-row__name' }, m.first_name, ' ',
           h('span', { class: 'visually-hidden' }, m.list_done ? 'list is done' : 'list not done yet')),
-        h('div', { class: 'check-row__meta' }, textPill(m),
+        h('div', { class: 'check-row__meta' }, textPill(m), openedPill(m),
           m.phone ? h('span', { class: 'muted' }, formatPhone(m.phone)) : null),
         t?.status === 'failed' && t.error ? h('div', { class: 'muted' }, `Reason: ${t.error}`) : null),
       h('div', { class: 'check-row__actions' },
@@ -182,8 +292,8 @@ async function afterSend (r) {
   if (!r) return
   notify(r.failed ? 'bad' : 'ok', summarize(r))
   // Status pills come from the table, not from the response.
-  await loadTexts()
-  render()
+  await refresh()
+  if (r.dry_run) { practice = true; render() }
 }
 
 $('send-invites').addEventListener('click', e => busy(e.currentTarget, async () => {

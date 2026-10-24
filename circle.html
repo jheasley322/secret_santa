@@ -27,6 +27,9 @@
   <main id="main" class="page stack">
     <p><a href="index.html">&larr; My circles</a></p>
     <div id="notices" class="stack-sm"></div>
+    <div class="notice notice--info" data-test="practice-banner" id="practice-banner" hidden>
+      <span class="notice__text"><span aria-hidden="true">&#9432;</span> Practice mode: no real texts are being sent.</span>
+    </div>
 
     <section id="not-found" class="card" aria-labelledby="nf-title" hidden>
       <h2 id="nf-title">Circle not found</h2>
@@ -51,6 +54,30 @@
           <div class="btn-row">
             <button class="btn btn--primary" type="button" id="send-invites">Send invites</button>
           </div>
+        </div>
+      </section>
+
+      <!-- Draw and reveal (approved mock, screen a2) -->
+      <section class="card" aria-labelledby="draw-title" id="draw-card" hidden>
+        <div class="card__title"><img src="img/gift.svg" alt=""><h2 id="draw-title">Draw the names</h2></div>
+        <p id="draw-intro"></p>
+        <p class="muted" data-test="draw-reason" id="draw-reason" hidden></p>
+        <div class="btn-row" id="draw-actions">
+          <button class="btn btn--primary" type="button" id="draw-btn" hidden>Draw names</button>
+          <button class="btn btn--primary" type="button" id="send-names" hidden>Send the names</button>
+          <button class="btn btn--secondary" type="button" id="shuffle-btn" hidden>Shuffle again</button>
+          <button class="btn btn--quiet btn--small" type="button" id="undo-btn" hidden>Undo draw</button>
+        </div>
+        <ul class="checklist" id="send-results" aria-label="Text results"></ul>
+        <div id="peek-box" hidden>
+          <div class="divider-cane" role="presentation"></div>
+          <label class="toggle">
+            <input type="checkbox" role="switch" data-test="show-matches" id="show-matches">
+            <span class="toggle__track" aria-hidden="true"></span>
+            <span>Show matches <span class="muted">(off by default)</span></span>
+          </label>
+          <p class="muted">Peeking spoils the surprise for you. Turn this on only when you need to.</p>
+          <ul class="match-list" id="match-list"></ul>
         </div>
       </section>
 
@@ -104,6 +131,16 @@
       </section>
     </div>
   </main>
+
+  <dialog class="dialog" data-test="confirm-send" id="confirm-send" aria-labelledby="cs-title">
+    <h2 id="cs-title">Send the names?</h2>
+    <p>This texts everyone who they drew and locks the draw. You can't shuffle after this.</p>
+    <p class="notice notice--info" id="cs-practice" hidden>Practice mode: no real texts</p>
+    <div class="btn-row">
+      <button class="btn btn--primary" type="button" id="cs-ok">Send the names</button>
+      <button class="btn btn--secondary" type="button" id="cs-cancel">Cancel</button>
+    </div>
+  </dialog>
 
   <script type="module" src="js/circle.js"></script>
 </body>
