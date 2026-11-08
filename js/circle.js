@@ -221,9 +221,10 @@ function renderProgress () {
 
 /** The latest text of the kind that matters right now: invites before the names are sent, reveals after. */
 function latestText (memberId) {
-  const kind = circle.status === 'sent' ? 'reveal' : 'invite'
+  // After sending, a re-shuffle text replaces the reveal as the one that matters. texts is oldest-first, so the last wins.
+  const kinds = circle.status === 'sent' ? ['reveal', 'reshuffle'] : ['invite']
   let last = null
-  for (const t of texts) if (t.member_id === memberId && t.kind === kind) last = t
+  for (const t of texts) if (t.member_id === memberId && kinds.includes(t.kind)) last = t
   return last
 }
 
@@ -250,13 +251,14 @@ function renderDraw () {
   $('send-names').hidden = !drawn
   $('shuffle-btn').hidden = !drawn
   $('undo-btn').hidden = !drawn
+  $('reshuffle-btn').hidden = !sent
   $('peek-box').hidden = open
   $('draw-title').textContent = open ? 'Draw the names' : drawn ? 'Send the names' : 'Names sent'
 
   const intro = $('draw-intro')
   intro.replaceChildren()
   if (open) intro.textContent = 'When every wish list is done, draw the names. Nobody is told until you send them.'
-  else if (drawn) intro.textContent = 'You can shuffle as often as you like. Once you send the names, the draw is final.'
+  else if (drawn) intro.textContent = 'You can shuffle as often as you like. Nobody is told until you send the names.'
   else intro.textContent = 'Names have already been sent.'
 
   // Draw rules (the database enforces them too; this only explains).
@@ -312,6 +314,47 @@ $('cs-ok').addEventListener('click', e => busy(e.currentTarget, async () => {
   if (r) sendResults = r.results ?? []
   await afterSend(r)
 }))
+
+// Re-shuffle after sending: two separate steps in one dialog. Step 1 has no confirm button at all.
+const rsDlg = $('confirm-reshuffle')
+function rsStep (title, paragraphs, actions) {
+  $('rs-title').textContent = title
+  $('rs-body').replaceChildren(...paragraphs.map(t => h('p', {}, t)))
+  $('rs-actions').replaceChildren(...actions)
+}
+const rsCancel = () => h('button', { class: 'btn btn--secondary', type: 'button', onclick: () => rsDlg.close() }, 'Cancel')
+function rsStepOne () {
+  rsStep('Re-shuffle the names?', [
+    'This makes a new draw. Everyone\'s current name is replaced, and nobody can get the same person again.',
+    'Everyone gets a new text with their new name.'
+  ], [
+    h('button', { class: 'btn btn--primary', type: 'button', 'data-test': 'reshuffle-next', onclick: rsStepTwo }, 'Next'),
+    rsCancel()
+  ])
+}
+function rsStepTwo () {
+  const n = members.filter(m => m.phone).length
+  rsStep('Text everyone now?', [
+    `This will text ${n} ${n === 1 ? 'kid' : 'kids'} their new name. It can't be undone.`
+  ], [
+    h('button', { class: 'btn btn--primary', type: 'button', 'data-test': 'reshuffle-confirm', onclick: e => busy(e.currentTarget, doReshuffle) }, 'Re-shuffle and text everyone'),
+    rsCancel()
+  ])
+}
+async function doReshuffle () {
+  rsDlg.close()
+  sendResults = []
+  const r = await callSendTexts({ circle_id: circleId, kind: 'reshuffle' })
+  if (r) sendResults = r.results ?? []
+  $('show-matches').checked = false
+  if (r) r.reshuffled = true
+  await afterSend(r)
+}
+$('reshuffle-btn').addEventListener('click', () => {
+  $('rs-practice').hidden = !practice
+  rsStepOne()
+  rsDlg.showModal()
+})
 
 function openedPill (m) {
   if (circle.status !== 'sent') return null
@@ -369,7 +412,9 @@ async function callSendTexts (body) {
   let json = null
   try { json = await res.json() } catch { /* not JSON */ }
   if (!res.ok) {
-    notify('bad', `Texts not sent: ${json?.error ?? `something went wrong (HTTP ${res.status})`}.`)
+    // A re-shuffle cut short has texted some kids, so "not sent" would be wrong.
+    if (json?.error?.startsWith('The new draw exists')) notify('bad', `${json.error}.`)
+    else notify('bad', `Texts not sent: ${json?.error ?? `something went wrong (HTTP ${res.status})`}.`)
     return null
   }
   return json
@@ -379,7 +424,8 @@ function summarize (r) {
   const parts = []
   if (r.dry_run) parts.push(`Practice run: ${r.sent} text${r.sent === 1 ? '' : 's'} logged, nothing was really sent.`)
   else parts.push(`${r.sent} text${r.sent === 1 ? '' : 's'} sent.`)
-  if (r.failed) parts.push(`${r.failed} failed. Tap Re-send on those kids to try again.`)
+  if (r.failed && r.reshuffled) parts.push(`${r.failed} failed. The new draw is in place, but those kids weren't told. Don't re-shuffle again: tap Re-send on those kids or use Copy link.`)
+  else if (r.failed) parts.push(`${r.failed} failed. Tap Re-send on those kids to try again.`)
   const skipped = (r.results ?? []).filter(x => x.status === 'skipped')
   if (skipped.length) {
     const byId = new Map(members.map(m => [m.id, m.first_name]))

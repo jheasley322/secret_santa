@@ -67,6 +67,7 @@
           <button class="btn btn--primary" type="button" id="send-names" hidden>Send the names</button>
           <button class="btn btn--secondary" type="button" id="shuffle-btn" hidden>Shuffle again</button>
           <button class="btn btn--quiet btn--small" type="button" id="undo-btn" hidden>Undo draw</button>
+          <button class="btn btn--secondary" type="button" id="reshuffle-btn" hidden>Re-shuffle and text everyone</button>
         </div>
         <ul class="checklist" id="send-results" aria-label="Text results"></ul>
         <div id="peek-box" hidden>
@@ -137,12 +138,19 @@
 
   <dialog class="dialog" data-test="confirm-send" id="confirm-send" aria-labelledby="cs-title">
     <h2 id="cs-title">Send the names?</h2>
-    <p>This texts everyone who they drew and locks the draw. You can't shuffle after this.</p>
+    <p>This texts everyone who they drew. After this, a re-shuffle texts everyone again.</p>
     <p class="notice notice--info" id="cs-practice" hidden>Practice mode: no real texts</p>
     <div class="btn-row">
       <button class="btn btn--primary" type="button" id="cs-ok">Send the names</button>
       <button class="btn btn--secondary" type="button" id="cs-cancel">Cancel</button>
     </div>
+  </dialog>
+
+  <dialog class="dialog" data-test="confirm-reshuffle" id="confirm-reshuffle" aria-labelledby="rs-title">
+    <h2 id="rs-title"></h2>
+    <div id="rs-body"></div>
+    <p class="notice notice--info" id="rs-practice" hidden>Practice mode: no real texts</p>
+    <div class="btn-row" id="rs-actions"></div>
   </dialog>
 
   <script type="module" src="js/circle.js"></script>

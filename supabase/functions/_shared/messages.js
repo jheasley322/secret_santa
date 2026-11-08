@@ -8,6 +8,7 @@
 //   * names are shortened with "..." to fit; the link is never shortened
 //   * Invite: Secret Santa! Hi {name}, add your wish list for {circle}: {link}
 //   * Reveal: Secret Santa! {name}, you drew {receiver}! {budget/date if set}. Their list: {link}
+//   * Re-shuffle: Secret Santa! Names were reshuffled. {name}, you now drew {receiver}! {budget/date if set}. Their list: {link}
 
 const MAX_SEPTETS = 160
 
@@ -92,7 +93,7 @@ export function inviteText ({ name, circle, link }) {
   return `${head}${fn}${mid}${fc}${tail}`
 }
 
-export function revealText ({ name, receiver, budget, swapDate, link }) {
+function drawText ({ head, mid, name, receiver, budget, swapDate, link }) {
   const n = toGsm7(name) || 'friend'
   const r = toGsm7(receiver) || 'your match'
   const parts = []
@@ -101,9 +102,15 @@ export function revealText ({ name, receiver, budget, swapDate, link }) {
   const d = shortDate(swapDate)
   if (d) parts.push(d)
   const details = parts.length ? ` ${parts.join(', ')}.` : ''
-  const head = 'Secret Santa! '
-  const mid = ', you drew '
   const tail = `!${details} Their list: ${link}`
   const [fn, fr] = fit([n, r], septets(head + mid + tail))
   return `${head}${fn}${mid}${fr}${tail}`
+}
+
+export function revealText (args) {
+  return drawText({ ...args, head: 'Secret Santa! ', mid: ', you drew ' })
+}
+
+export function reshuffleText (args) {
+  return drawText({ ...args, head: 'Secret Santa! Names were reshuffled. ', mid: ', you now drew ' })
 }

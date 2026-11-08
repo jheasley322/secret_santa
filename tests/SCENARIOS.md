@@ -70,7 +70,7 @@ Spec: *Interface contract → Constraints*, *Data model*.
 | CON-16 | A match can't name a giver or receiver from another circle. |
 | CON-17 | A member can be a giver only once and a receiver only once. |
 | CON-18 | A wish-item link must be http or https; `javascript:` and `data:` are rejected at the table too. |
-| CON-19 | Text `kind` is only `invite`/`reveal`; text `status` is only `pending`/`sent`/`failed` (anything else, e.g. `delivered`, is rejected). |
+| CON-19 | Text `kind` is only `invite`/`reveal`/`reshuffle`; text `status` is only `pending`/`sent`/`failed` (anything else, e.g. `delivered`, is rejected). |
 | CON-20 | **US only** (spec *Security hardening* S2): `+44…`, `+33…` and `+52…` numbers are rejected, on update and on insert. Proposed check: `phone is null or phone ~ '^\+1[0-9]{10}$'`. |
 | CON-21 | **A phone is required when a member is added** (Joe, Decision 5): an insert with a null or missing phone is rejected, as postgres and as the Elf. A later update to null is still allowed (CON-06), because `erase_old_phones()` does exactly that. Proposed: a `BEFORE INSERT` trigger on `members` raising `phone number required` when `new.phone is null`. A plain `check` can't tell insert from update. |
 | CON-22 | A `pending` text row is accepted (spec S3). |
@@ -933,13 +933,13 @@ behaviour that already exists, and they must stay green.
 | E2E-DRAW-03 | **Unhappy:** with seeded no-pairs that make every draw impossible, tapping Draw names shows "Can't make a draw with these do-not-pair rules. Try removing one." The circle stays `open` with no matches. | *Do-not-pair*, *Draw rules* |
 | E2E-DRAW-04 | **Happy:** with 3 members all done, Draw names is enabled. Tapping it makes the circle `drawn` with 3 matches. Shuffle again, Undo draw and Send the names appear, and Draw names goes away. Show matches is unchecked, no match row is visible, and no "Giver → Receiver" text is on screen. | *The flow* 6, *Peek* |
 | E2E-DRAW-05 | **Undo draw** returns the circle to `open` and deletes the matches, and Draw names is back. An in-page confirm is tolerated but not required. | *Circle status* |
-| E2E-DRAW-06 | **Happy:** draw again, then **Send the names**. An in-page `<dialog data-test="confirm-send">` opens with the exact confirm text **and** "Practice mode: no real texts". Nothing is sent before confirming. Confirming sends one request, `{ circle_id, kind: 'reveal' }` with the Bearer JWT. The circle becomes `sent`, and each member's `[data-test="send-result"]` says sent. The practice banner shows. "Names have already been sent." appears, Undo/Draw are gone and Shuffle is gone or disabled. No native `alert`/`confirm` fired. | *The flow* 7, *Reshuffle*, S6 |
+| E2E-DRAW-06 | **Happy:** draw again, then **Send the names**. An in-page `<dialog data-test="confirm-send">` opens with the exact confirm text **and** "Practice mode: no real texts". Nothing is sent before confirming. Confirming sends one request, `{ circle_id, kind: 'reveal' }` with the Bearer JWT. The circle becomes `sent`, and each member's `[data-test="send-result"]` says sent. The practice banner shows. "Names have already been sent." appears, Undo/Draw are gone and Shuffle again is absent. No native `alert`/`confirm` fired. | *The flow* 7, *Reshuffle*, S6 |
 | E2E-DRAW-07 | **Show matches** (`[data-test="show-matches"]`) is off by default. When on, it lists exactly the `matches` table as `[data-test="match-row"]` "Giver → Receiver". It turns off again, and after a reload it is off (not remembered). | *Peek* |
 | E2E-DRAW-08 | **Shuffle again** calls `reshuffle`. Within 10 shuffles of a 3-member circle the matches change (only 2 derangements exist), the circle stays `drawn`, and any match list on screen is the current draw, never a stale one. | *Reshuffle*, *Draw rules* |
 | E2E-DRAW-09 | **Unhappy:** Cancel in the confirm sends nothing and leaves the draw and status unchanged. The dialog closes, and no native dialog fired. | *The flow* 7, S6 |
 | E2E-DRAW-10 | Per-member results come **from the response**. With the stub returning Ava sent, Ben failed and Cy skipped, each `send-result` says so. Cy's "skipped" writes no row, so it can only come from the response. Ben's row pill reads "Text failed". | *The flow* 9, *Texting* |
 | E2E-DRAW-11 | The drawn page, with matches shown and with the confirm open, has no horizontal scroll at 375px. | Brief |
-| E2E-DRAW-12 | **Unhappy (shuffle after sending):** a `sent` circle shows "Names have already been sent.". There's no Draw names, Undo draw or Send the names, and Shuffle again is absent or disabled. | *Reshuffle*, *Circle status* |
+| E2E-DRAW-12 | **Unhappy (shuffle after sending):** a `sent` circle shows "Names have already been sent.". There's no Draw names, Undo draw or Send the names, and Shuffle again is absent. | *Reshuffle*, *Circle status* |
 | E2E-DRAW-13 | In a `sent` circle each row shows its **reveal** text status (Ava "Text sent", Ben "Text failed", Cy "Not sent yet"). Ava, whose `matches.opened_at` is set, shows "Opened ✓", and Ben and Cy show "Not opened yet". | *Progress*, *The flow* 9 |
 | E2E-DRAW-14 | Re-send on one row of a `sent` circle sends `{ circle_id, kind: 'reveal', member_id }`. | *Re-send* |
 | E2E-DRAW-15 | **Unhappy:** Elf A calling `reshuffle` / `undo_draw` / `start_draw` on a `sent` circle is refused ("names have already been sent/drawn"), and the matches are unchanged. | *Reshuffle*, contract errors |
@@ -965,7 +965,7 @@ behaviour that already exists, and they must stay green.
   `Giver → Receiver` (U+2192, single spaces), read from the `matches` table. When off, no
   match row is visible.
 - `<dialog data-test="confirm-send">` opened with `showModal()` (never `window.confirm`). It
-  contains `This texts everyone who they drew and locks the draw. You can't shuffle after this.`
+  contains `This texts everyone who they drew. After this, a re-shuffle texts everyone again.`
   In practice mode it also contains `Practice mode: no real texts`. Its buttons are one whose
   name contains "Send the names" (confirm) and one named "Cancel".
 - After a send: one `[data-test="send-result"][data-member-id="<member id>"]` per result in the
@@ -979,9 +979,8 @@ behaviour that already exists, and they must stay green.
 
 ### Open questions (the tests take the reading shown)
 
-1. **Shuffle after sending: absent or disabled?** The spec (*Reshuffle*) says disabled with the
-   note "Names have already been sent."; the lead says no shuffle controls. The tests accept
-   either, and require the note.
+1. **Shuffle after sending: absent or disabled?** Settled by the re-shuffle feature (Joe,
+   2026-11-08): **Shuffle again** is absent once `sent`. The tests still require the note.
 2. **Practice mode with no texts yet.** The UI can't know until the first send. The confirm then
    can't say "Practice mode". Not pinned. In E2E-DRAW-06 the circle has dry-run invites, so the
    phrase is required.
@@ -1074,6 +1073,171 @@ and must stay green.
    phrase it kindly.
 4. **Removing a kid who is in a pair** cascades in the DB. That isn't pinned here; the list
    should simply re-render.
+
+---
+
+## Re-shuffle after the names are sent (Joe, 2026-11-08)
+
+Spec sections: *Re-shuffle after the names are sent*, *Circle status*, `texts.kind` in the data
+model, and the `kind: 'reshuffle'` bullet under *Texting*. The Elf can make a new draw once the
+circle is `sent`. It texts every kid their new name, the circle stays `sent`, and everyone's
+current match is banned one-way in the new draw.
+
+**Status key:** RS-01..29, ST-57..86, MSG-13..17 and E2E-DRAW-23..30 are expected **red** until
+the feature lands. A few assertions already hold on today's code and must stay green: the
+plain-`reshuffle` refusals in RS-04, and E2E-DRAW-24, which pins that the new button is absent.
+
+### Safety
+
+- Dry run only. Deno uses `FakeProvider` with net, env and write denied. Playwright stubs
+  send-texts on every page. For `reshuffle` the stub writes **no rows** and changes no matches:
+  it only answers the page.
+- No test loads `.env` for texting, and no test reaches Textbelt.
+- pgTAP runs inside a transaction that always rolls back.
+
+### Contract the tests assume (backend-engineer builds to this)
+
+```
+public.claim_reshuffle(p_circle_id uuid, p_member_ids uuid[], p_dry_run boolean) returns jsonb
+  -- SECURITY DEFINER, search_path = '', EXECUTE for service_role only
+  -- ok:    {"ok": true,  "texts": [{"member_id", "text_id", "receiver_id"}], "skipped": [{"member_id", "reason"}]}
+  -- no:    {"ok": false, "error": "<message>"}          (never raises for a refusal)
+```
+
+- Refusals, each with nothing changed: `bad request` (a null argument, or `p_member_ids` not exactly
+  the circle's members), `circle not found`, `a send is already in progress`, `nobody can be texted`,
+  `names have not been sent yet`, `Can't make a draw with these do-not-pair rules. Try removing one.`,
+  `text budget used up`, `too many texts, try again in an hour`.
+- The **whole circle** is re-matched, and `p_member_ids` must list all of it.
+- `claim_texts` with `kind: 'reveal'`, `p_resend: true` is refused with `a send is already in
+  progress` while a live `reshuffle` row is pending.
+- `send-texts` builds re-shuffle messages from the claim's `receiver_id` and doesn't read the matches.
+- After the new draw exists, a failure answers with an error whose text says the new draw exists,
+  some kids may not have been told, and `use Re-send or Copy link`.
+- Rows and credits work as in `claim_texts`: `pending` rows of kind `reshuffle`, 1 credit per kid
+  texted, real sends only. The cap is skipped in a dry run. The rate limit is not.
+- `send-texts` adds `db.claimReshuffle({ circle_id, member_ids, dry_run })` to its injected
+  dependencies, wired to the RPC in `index.ts`.
+- `reshuffleText({ name, receiver, budget, swapDate, link })` is exported from
+  `supabase/functions/_shared/messages.js`, with the same arguments as `revealText`.
+
+### RS: `claim_reshuffle` (`tests/sql/63_claim_reshuffle.sql`, pgTAP)
+
+| ID | Scenario | Spec |
+|---|---|---|
+| RS-01 | `claim_reshuffle(uuid, uuid[], boolean)` exists with the spec's argument names, is SECURITY DEFINER and pins `search_path`. | *Texting* |
+| RS-02 | `service_role` can execute it. `public`, `anon` and `authenticated` can't, and an Elf or anon calling it directly gets permission denied. | *Texting* ("internal service-role-only") |
+| RS-03 | **Only from `sent`:** on an `open` or `drawn` circle it returns `names have not been sent yet`, with nothing changed. An unknown circle returns `circle not found`, and a null argument returns `bad request`. | *Texting* |
+| RS-04 | **A sent draw can't change without the texts:** the Elf's plain `reshuffle` and `undo_draw` on a `sent` circle still say `names have already been sent` (STAT-08 stays), before and after a re-shuffle. | *Re-shuffle after…*, *Error messages* |
+| RS-05 | **3 kids, exactly one rematch:** across 30 runs every new draw is valid, none repeats a current giver→receiver, and the draw only ever alternates between the two possible states. | *Re-shuffle after…* |
+| RS-06 | **One-way ban, reverse allowed:** 40 runs from the same 4-kid cycle. No current match repeats. Both possible rematches appear, including the exact reverse of the current cycle, so a reverse is genuinely allowed. | *Re-shuffle after…* ("Alex may draw Sam") |
+| RS-07 | **8 kids with do-not-pairs:** across 30 chained re-shuffles, nobody draws themselves, every kid gives and receives once, no do-not-pair breaks in either direction, and no current match repeats. Only the current draw is banned, so an older match may come back. | *Re-shuffle after…*, *Draw rules* |
+| RS-08 | The circle stays `sent` and every `opened_at` is cleared. Tokens don't change. | *Re-shuffle after…* ("Opened tracking starts over") |
+| RS-09 | Real run: a `pending` `reshuffle` row per kid, `dry_run` false, ids returned in `texts`, nothing skipped, `used` up by 3 and `last_quota` down by 3. | *Texting*, S1, S3 |
+| RS-10 | Dry run: `pending` rows with `dry_run` true, accepted at the cap, and `used` untouched. | Decision 2 |
+| RS-11 | **Impossible rematch** (current draw valid, but the ban and do-not-pairs leave no draw) returns `ok: false` and the do-not-pair message. It doesn't raise. Matches, `opened_at`, status, rows and credits are unchanged, real or dry. | *Re-shuffle after…* |
+| RS-12 | **Over the cap:** 43 used of 45 with 3 kids refuses with `text budget used up` and nothing changed. 42 + 3 fits exactly. | *All or nothing*, HARD LIMITS |
+| RS-13 | **Reserve:** spending below a reserve of 5 refuses with nothing changed. Landing exactly on 5 is allowed. | HARD LIMITS |
+| RS-14 | **Any kid at 3 texts this hour** refuses the whole batch with `too many texts, try again in an hour` and nothing changed. Dry-run, failed and swept-pending rows all count, and it applies in a dry run too. | *All or nothing*, Decisions 2, 3 |
+| RS-15 | The limit is exact: 2 recent texts, or 3 texts older than an hour, don't refuse. | *Texting* |
+| RS-16 | **A phoneless kid** is still re-matched, gets no row and no credit, and is reported as skipped `no phone number`. Kids with phones are texted. | *Re-shuffle after…* |
+| RS-17 | A phoneless kid at the rate limit doesn't block the batch, because they aren't being texted. | *All or nothing* ("any kid being texted") |
+| RS-18 | **Nobody has a phone:** refused with `nobody can be texted`, real or dry, with matches, rows and credits unchanged. *(Revised: was accepted.)* | *Re-shuffle after…* |
+| RS-19 | A list holding another circle's member is `bad request`: no row, nothing changed. *(Revised: was ignored.)* | *Texting* |
+| RS-20 | The claim holds a writer lock on the circle row. | *Texting* ("under the circle lock") |
+| RS-21 | A stale `pending` row (over 10 minutes old) in the circle is swept to `failed` and doesn't block. | S3 |
+| RS-22 | The kid's **same link** shows the new match once re-shuffled, and viewing it sets `opened_at` again. | *Re-shuffle after…* |
+| RS-23 | `texts.kind` accepts `reshuffle`. | *Data model* |
+| RS-24 | **One at a time:** a live `pending` row of any kind in the circle refuses with `a send is already in progress`, real or dry, including a 9-minute-old row, with matches, rows and credits unchanged. | *One at a time* |
+| RS-25 | A pending row past the 10-minute sweep window doesn't block and is swept to `failed`. Another circle's pending row doesn't block either. | *One at a time*, S3 |
+| RS-26 | A Re-send (`claim_texts`, reveal, resend) is refused with `a send is already in progress` while a `reshuffle` row is pending, with no row and no credit. | *One at a time* |
+| RS-27 | Once that `reshuffle` row is stale, a Re-send is allowed. | S3 |
+| RS-28 | Each entry in `texts` is exactly `{member_id, text_id, receiver_id}`, and `receiver_id` is that kid's new match. | Audit finding |
+| RS-29 | A `p_member_ids` missing a kid, empty or null is `bad request`, with nothing changed. | Audit finding |
+
+### ST: `send-texts` for `kind: 'reshuffle'` (`supabase/functions/send-texts/reshuffle_test.ts`, Deno)
+
+| ID | Scenario | Spec |
+|---|---|---|
+| ST-57 | `{ circle_id, kind: 'reshuffle' }` is accepted, and each kid's dry-run row is kind `reshuffle` with status `sent`. | *Texting* |
+| ST-58 | A `member_id` (even a real one in the circle) is 400 `bad request`. Nothing is re-matched or sent. | *Texting* |
+| ST-59 | `open` or `drawn` is 409 `names have not been sent yet`, with nothing changed. | *Texting* |
+| ST-60 | A non-owner gets `circle not found`, a stranger not on `ELF_USER_IDS` is also refused, and no JWT gets a 4xx. Nothing changes. | *Texting*, S2 |
+| ST-61 | **Messages use the matches read after the claim:** every kid is told their new receiver, never the old one, with the exact spec wording. | *Texting* |
+| ST-62 | **Dry run** sends nothing, stores the exact new message in `body`, reports `dry_run: true` and spends no credits, even at the cap. | *Texting*, Decision 2 |
+| ST-63 | An empty env is a dry run: the provider is never called. | HARD LIMITS |
+| ST-64 | Real mode: 1 provider call per kid to their own number, rows `sent`, credits claimed before the first text. | *Texting* |
+| ST-65 | **Claim refuses (impossible):** the do-not-pair message comes back verbatim with a 4xx. The provider is never called and matches are unchanged. | *Re-shuffle after…* |
+| ST-66 | **Claim refuses (cap):** 403 `text budget used up`. The provider is never called and matches are unchanged. | *All or nothing* |
+| ST-67 | **Claim refuses (rate limit):** one kid at the limit gives a 4xx `too many texts, try again in an hour`. Nobody is texted and matches are unchanged. | *All or nothing* |
+| ST-68 | **Claim refuses (race):** the circle isn't `sent` any more at the claim gives 409, nothing sent. | *Texting* |
+| ST-69 | Real mode with no provider key is 503, and links not approved is 403. Neither re-matches anyone. | S4, HARD LIMITS |
+| ST-70 | A phoneless kid is re-matched, skipped and reported. The others are texted their new names. | *Re-shuffle after…* |
+| ST-71 | A provider failure or thrown error is logged `failed` for that kid, the others still go, and no row is left `pending`. | Matches the reveal batch |
+| ST-72 | A failed log write after a send stops the batch. The response is an error saying the new draw exists, some kids may not have been told, and `use Re-send or Copy link`. Later kids aren't texted. *(Revised.)* | *Honest failures* |
+| ST-73 | Reserve reached mid-batch: nothing more goes out, the remaining rows end `failed`, and the response is the same honest error. *(Revised: was a 200.)* | *Honest failures*, HARD LIMITS |
+| ST-74 | Re-shuffle messages come from the claim's `receiver_id`: with the matches unreadable, every kid still gets the right new name. *(Revised: was "nothing sent if matches can't be read".)* | Audit finding |
+| ST-75 | After a re-shuffle, Re-send on one member uses the normal "you drew" text with the new match. | *Texting* |
+| ST-76 | `index.ts` calls `claim_reshuffle` with the spec's named arguments. | *Texting* |
+| ST-77 | A failed log write in a dry run gets the honest error too. | *Honest failures* |
+| ST-78 | An unexpected throw after the claim gets the honest error. | *Honest failures* |
+| ST-79 | A claimed text naming an unknown receiver stops the batch with the honest error, and no text names a made-up receiver. | *Honest failures* |
+| ST-80 | A pending text refuses a re-shuffle with `a send is already in progress`, nothing changed. | *One at a time* |
+| ST-81 | A stale pending row doesn't refuse a re-shuffle. | *One at a time*, S3 |
+| ST-82 | A Re-send is refused the same way while a re-shuffle is pending. | *One at a time* |
+| ST-83 | A Re-send names the match read **after** its claim. | *One at a time* |
+| ST-84 | If that match is gone after the claim, nobody is texted, the Elf hears about it and no row is left `pending`. | *One at a time* |
+| ST-85 | Nobody has a phone: `nobody can be texted`, matches unchanged. | *Re-shuffle after…* |
+| ST-86 | A claim that was refused doesn't get the "new draw exists" message. | *Honest failures* |
+
+### MSG: the re-shuffle text (`tests/unit/messages.test.js`, Vitest)
+
+| ID | Scenario | Spec |
+|---|---|---|
+| MSG-13 | Exactly `Secret Santa! Names were reshuffled. Maya, you now drew Ava! $20, Dec 19. Their list: <link>`. | *Texting* |
+| MSG-14 | Budget only, date only, neither: only what's set appears, with no junk, no `!.` and no double space. A budget of 0 shows `$0`. | *Texting* |
+| MSG-15 | Across a matrix of names, budgets and dates: GSM-7 only, ≤160 septets, ending with the whole link. | *Message format* |
+| MSG-16 | 40-character names are shortened with `...` from a prefix of the original, and the link stays whole and last. | *Message format* |
+| MSG-17 | An emoji-only name still gives a valid one-segment text with the link. | *Message format* |
+
+### E2E-DRAW additions (`tests/e2e/draw.spec.js`, Playwright)
+
+| ID | Scenario | Spec |
+|---|---|---|
+| E2E-DRAW-23 | After sending, **Re-shuffle and text everyone** is visible, and **Shuffle again** is absent. | *Re-shuffle after…*, *Reshuffle* |
+| E2E-DRAW-24 | The button isn't shown while `open` or `drawn`. | *Re-shuffle after…* |
+| E2E-DRAW-25 | **Cancel at step 1** sends nothing and changes nothing. | *Double confirm* |
+| E2E-DRAW-26 | **Cancel at step 2** sends nothing and changes nothing. Moving from step 1 to step 2 sends nothing either. | *Double confirm* |
+| E2E-DRAW-27 | Step 2 states how many kids will be texted, counting only kids with a phone. Confirming POSTs `{ circle_id, kind: 'reshuffle' }` **once**, with the Bearer JWT, and no native dialog fires. | *Double confirm*, *Texting* |
+| E2E-DRAW-28 | Per-kid results from the response show sent and skipped. | *Re-shuffle after…* ("skipped … and reported") |
+| E2E-DRAW-29 | A refusal shows the function's message verbatim. The circle and matches don't change. | *Re-shuffle after…* |
+| E2E-DRAW-30 | Both steps have no horizontal scroll at 375px. | Brief |
+
+**Changed assertions:** E2E-DRAW-06 now pins the new confirm copy, and E2E-DRAW-06 and 12 now require
+**Shuffle again** to be absent once sent (before, absent or disabled).
+
+### UI contract for the builder (pinned by the tests)
+
+- A button named exactly `Re-shuffle and text everyone`, shown only while `sent`.
+- Each step is shown in a `<dialog>` opened with `showModal()`, one dialog with two steps or two
+  dialogs. Never `window.confirm`.
+- Step 1 explains what happens. Its buttons are `[data-test="reshuffle-next"]` and one named `Cancel`.
+- Step 2 contains the count as `<n> kids`, or `1 kid`. Its buttons are `[data-test="reshuffle-confirm"]`
+  (the one that acts) and one named `Cancel`.
+- Results use the existing `[data-test="send-result"]`. A refusal's message is shown verbatim.
+
+### Open questions (the tests take the reading shown)
+
+0. **A provider rejecting some kids** (ST-71) stays a 200 with per-kid `failed` results, like the
+   reveal batch. The audit's list of honest-failure cases doesn't include it.
+1. **The note "Names have already been sent."** The spec no longer mentions it, but nothing
+   contradicts it, and the brief asked only for the confirm copy to change. E2E-DRAW-06 and 12
+   still require it.
+2. **Which refusal wins** when a rematch is impossible and the batch is also over the cap? Not
+   pinned. Each is tested alone.
+3. *(Settled: `p_member_ids` must be the full list, RS-29.)*
+4. **HTTP status for the rate-limit and impossible-draw refusals.** The spec fixes the message
+   only, so the tests require a 4xx and the exact text.
 
 ---
 

@@ -1,6 +1,8 @@
-// E2E-DRAW-01..22: the Elf's draw and reveal on circle.html (Phase 4).
+// E2E-DRAW-01..30: the Elf's draw and reveal on circle.html (Phase 4), and the
+// re-shuffle after sending (E2E-DRAW-23..30).
 // Spec: "The flow" 6-9, "Reshuffle", "Peek", "Re-send", "Progress",
-// "Circle status", "Draw rules", "Texting" (reveal), "Security hardening" S6.
+// "Circle status", "Draw rules", "Texting" (reveal), "Security hardening" S6,
+// "Re-shuffle after the names are sent".
 // Approved layout: design/preview.html mock (a) draw card and (a2) after the draw.
 // Scenario IDs and the DOM contract are in tests/SCENARIOS.md (Phase 4).
 //
@@ -25,7 +27,8 @@ const accessToken = label => {
   return JSON.parse(state.origins[0].localStorage[0].value).access_token
 }
 const PRACTICE = 'Practice mode: no real texts'
-const CONFIRM_TEXT = "This texts everyone who they drew and locks the draw. You can't shuffle after this."
+const CONFIRM_TEXT = 'This texts everyone who they drew. After this, a re-shuffle texts everyone again.'
+const RESHUFFLE_BTN = 'Re-shuffle and text everyone'
 
 // circle key -> id, `${circleKey}.${first}` -> member id
 const C = {}
@@ -105,6 +108,14 @@ async function seed () {
     // drawn: send with one failure and one skip
     await circle('mixed'); await members('mixed', kids()); await invites('mixed')
     await lock('mixed', [['Ava', 'Cy'], ['Ben', 'Ava'], ['Cy', 'Ben']], 'drawn')
+    // sent, one kid with no phone: the second confirm counts only the kids with phones.
+    // The phone is erased while open, the only way a real member ends up without one.
+    await circle('phoneless'); await members('phoneless', [...kids(), ['Dee', true]])
+    await db.query('update public.members set phone = null where id = $1', [M['phoneless.Dee']])
+    await lock('phoneless', [['Ava', 'Ben'], ['Ben', 'Cy'], ['Cy', 'Dee'], ['Dee', 'Ava']], 'sent')
+    // sent: re-shuffle dialogs, results and refusals. Never actually re-matched: the stub writes nothing.
+    await circle('resent'); await members('resent', kids()); await invites('resent')
+    await lock('resent', [['Ava', 'Ben'], ['Ben', 'Cy'], ['Cy', 'Ava']], 'sent', ['Ava'])
     // sent: Ava opened hers; reveal texts: Ava sent, Ben failed, Cy none
     await circle('sent'); await members('sent', kids()); await invites('sent')
     await lock('sent', [['Ava', 'Ben'], ['Ben', 'Cy'], ['Cy', 'Ava']], 'sent', ['Ava'])
@@ -129,6 +140,11 @@ test.afterAll(async () => {
 const row = (page, name) => page.locator('[data-test="member-row"]', { hasText: name })
 const btn = (page, name) => page.getByRole('button', { name, exact: true })
 const confirmDialog = page => page.locator('dialog[data-test="confirm-send"]')
+// One dialog with two steps or two dialogs: either way exactly one is open at a time.
+const openDialog = page => page.locator('dialog[open]')
+const reshuffleNext = page => openDialog(page).locator('[data-test="reshuffle-next"]')
+const reshuffleConfirm = page => openDialog(page).locator('[data-test="reshuffle-confirm"]')
+const reshuffleCancel = page => openDialog(page).getByRole('button', { name: /cancel/i })
 const visibleMatchRows = page => page.locator('[data-test="match-row"]:visible')
 
 const status = key => withDb(async db => (await db.query('select status from public.circles where id = $1', [C[key]])).rows[0].status)
@@ -264,8 +280,7 @@ test.describe('Elf A', () => {
       await expect(page.getByText('Names have already been sent.')).toBeVisible()
       await expect(btn(page, 'Undo draw')).toHaveCount(0)
       await expect(btn(page, 'Draw names')).toHaveCount(0)
-      const shuffle = btn(page, 'Shuffle again')
-      if (await shuffle.count()) await expect(shuffle).toBeDisabled()
+      await expect(btn(page, 'Shuffle again')).toHaveCount(0)
       expect(native).toEqual([])
     })
   })
@@ -329,6 +344,15 @@ test.describe('Elf A', () => {
       expect(native).toEqual([])
     })
 
+    test('E2E-DRAW-24 Re-shuffle and text everyone is not offered before the names are sent', async ({ page }) => {
+      await openCircle(page, 'drawn')
+      await expect(btn(page, 'Send the names')).toBeVisible()
+      await expect(btn(page, RESHUFFLE_BTN)).toHaveCount(0)
+      await openCircle(page, 'waiting')
+      await expect(btn(page, 'Draw names')).toBeVisible()
+      await expect(btn(page, RESHUFFLE_BTN)).toHaveCount(0)
+    })
+
     test('E2E-DRAW-10 per-member results show sent, failed and skipped from the response', async ({ page, sendCalls, sendStub }) => {
       sendStub.fail.add(M['mixed.Ben'])
       sendStub.skip.set(M['mixed.Cy'], 'too many texts, try again in an hour')
@@ -362,8 +386,7 @@ test.describe('Elf A', () => {
       await expect(btn(page, 'Draw names')).toHaveCount(0)
       await expect(btn(page, 'Undo draw')).toHaveCount(0)
       await expect(btn(page, 'Send the names')).toHaveCount(0)
-      const shuffle = btn(page, 'Shuffle again')
-      if (await shuffle.count()) await expect(shuffle).toBeDisabled()
+      await expect(btn(page, 'Shuffle again')).toHaveCount(0)
     })
 
     test('E2E-DRAW-13 each row shows its reveal text status and Opened ✓ / Not opened yet', async ({ page }) => {
@@ -399,6 +422,106 @@ test.describe('Elf A', () => {
     test('E2E-DRAW-16 the sent page has no horizontal scroll at 375px', async ({ page }) => {
       await page.setViewportSize({ width: 375, height: 800 })
       await openCircle(page, 'sent')
+      await noHorizontalScroll(page)
+    })
+
+    test('E2E-DRAW-23 after sending, Re-shuffle and text everyone is visible and Shuffle again is absent', async ({ page }) => {
+      await openCircle(page, 'sent')
+      await expect(btn(page, RESHUFFLE_BTN)).toBeVisible()
+      await expect(btn(page, RESHUFFLE_BTN)).toBeEnabled()
+      await expect(btn(page, 'Shuffle again')).toHaveCount(0)
+    })
+
+    test('E2E-DRAW-25 Cancel at the first step sends nothing and changes nothing', async ({ page, sendCalls }) => {
+      const native = watchNativeDialogs(page)
+      await openCircle(page, 'resent')
+      const before = await dbPairs('resent')
+      await btn(page, RESHUFFLE_BTN).click()
+      await expect(openDialog(page)).toBeVisible()
+      await expect(reshuffleConfirm(page)).toHaveCount(0) // the first step cannot act
+      await reshuffleCancel(page).click()
+      await expect(openDialog(page)).toHaveCount(0)
+      expect(sendCalls).toHaveLength(0)
+      expect(await status('resent')).toBe('sent')
+      expect(await dbPairs('resent')).toEqual(before)
+      expect(native).toEqual([])
+    })
+
+    test('E2E-DRAW-26 Cancel at the second step sends nothing and changes nothing', async ({ page, sendCalls }) => {
+      const native = watchNativeDialogs(page)
+      await openCircle(page, 'resent')
+      const before = await dbPairs('resent')
+      await btn(page, RESHUFFLE_BTN).click()
+      await reshuffleNext(page).click()
+      await expect(reshuffleConfirm(page)).toBeVisible()
+      expect(sendCalls).toHaveLength(0) // reaching step two sends nothing either
+      await reshuffleCancel(page).click()
+      await expect(openDialog(page)).toHaveCount(0)
+      expect(sendCalls).toHaveLength(0)
+      expect(await status('resent')).toBe('sent')
+      expect(await dbPairs('resent')).toEqual(before)
+      expect(native).toEqual([])
+    })
+
+    test('E2E-DRAW-27 the second step states the count; confirming POSTs kind reshuffle exactly once', async ({ page, sendCalls }) => {
+      const native = watchNativeDialogs(page)
+      await openCircle(page, 'resent')
+      await btn(page, RESHUFFLE_BTN).click()
+      await reshuffleNext(page).click()
+      await expect(openDialog(page)).toContainText(/\b3 kids\b/i)
+      await reshuffleConfirm(page).click()
+      await expect.poll(() => sendCalls.length).toBe(1)
+      expect(sendCalls[0].body).toEqual({ circle_id: C.resent, kind: 'reshuffle' })
+      expect(sendCalls[0].authorization).toMatch(/^Bearer .+/)
+      await expect(openDialog(page)).toHaveCount(0)
+      await expect(page.locator(`[data-test="send-result"][data-member-id="${M['resent.Ava']}"]`)).toBeVisible()
+      expect(sendCalls).toHaveLength(1)
+      expect(native).toEqual([])
+    })
+
+    test('E2E-DRAW-27 the count covers only the kids who will be texted (no phone, no count)', async ({ page }) => {
+      await openCircle(page, 'phoneless')
+      await btn(page, RESHUFFLE_BTN).click()
+      await reshuffleNext(page).click()
+      await expect(openDialog(page)).toContainText(/\b3 kids\b/i)
+      await expect(openDialog(page)).not.toContainText(/\b4 kids\b/i)
+    })
+
+    test('E2E-DRAW-28 per-kid results from the response show who was texted and who was skipped', async ({ page, sendCalls, sendStub }) => {
+      sendStub.skip.set(M['resent.Cy'], 'no phone number')
+      await openCircle(page, 'resent')
+      await btn(page, RESHUFFLE_BTN).click()
+      await reshuffleNext(page).click()
+      await reshuffleConfirm(page).click()
+      await expect.poll(() => sendCalls.length).toBe(1)
+      const result = n => page.locator(`[data-test="send-result"][data-member-id="${M[`resent.${n}`]}"]`)
+      await expect(result('Ava')).toContainText(/sent/i)
+      await expect(result('Cy')).toContainText(/skipped/i)
+      await expect(result('Cy')).toContainText('no phone number')
+    })
+
+    test('E2E-DRAW-29 a refusal shows the message verbatim and the circle does not change', async ({ page, sendCalls, sendStub }) => {
+      const refusal = "Can't make a draw with these do-not-pair rules. Try removing one."
+      sendStub.refuse = refusal
+      await openCircle(page, 'resent')
+      const before = await dbPairs('resent')
+      await btn(page, RESHUFFLE_BTN).click()
+      await reshuffleNext(page).click()
+      await reshuffleConfirm(page).click()
+      await expect.poll(() => sendCalls.length).toBe(1)
+      await expect(page.getByText(refusal)).toBeVisible()
+      expect(await status('resent')).toBe('sent')
+      expect(await dbPairs('resent')).toEqual(before)
+    })
+
+    test('E2E-DRAW-30 both re-shuffle steps have no horizontal scroll at 375px', async ({ page }) => {
+      await page.setViewportSize({ width: 375, height: 800 })
+      await openCircle(page, 'resent')
+      await btn(page, RESHUFFLE_BTN).click()
+      await expect(openDialog(page)).toBeVisible()
+      await noHorizontalScroll(page)
+      await reshuffleNext(page).click()
+      await expect(reshuffleConfirm(page)).toBeVisible()
       await noHorizontalScroll(page)
     })
   })

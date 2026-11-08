@@ -17,10 +17,12 @@ export const ERR = {
   rate: 'too many texts, try again in an hour',
   notDrawn: 'names have not been drawn yet',
   alreadySent: 'names have already been sent',
-  notSentYet: 'names have not been sent yet'
+  notSentYet: 'names have not been sent yet',
+  /** spec "Honest failures": after a re-shuffle's claim the new draw exists, whatever else went wrong. */
+  reshuffleCutShort: "The new draw exists, but some kids may not have been told. Don't re-shuffle again: use Re-send or Copy link"
 } as const
 
-export type Kind = 'invite' | 'reveal'
+export type Kind = 'invite' | 'reveal' | 'reshuffle'
 
 export interface TextRow {
   member_id: string
@@ -84,7 +86,7 @@ export interface Skip { member_id: string; reason: string }
 /**
  * spec "Who gets texted". One member: just them (Re-send is explicit). Invite
  * batch: members without a successful (or in-flight, S3) real invite; dry-run
- * invites never count (Decision 1). Reveal batch: everyone.
+ * invites never count (Decision 1). Reveal or reshuffle batch: everyone.
  * No phone: skipped and reported, never an error.
  */
 export function pickRecipients (

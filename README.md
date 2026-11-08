@@ -16,7 +16,7 @@ Written as of the end of Phase 1 and most of Phase 2 (branch `phase-1-2`).
 | Elf pages: sign-in, my circles, circle dashboard (add kids, progress, Send invites, Re-send, Copy link, Remove, edit details) | Built. Not published, not yet tried against the live project. |
 | `send-texts` Edge Function | Written and unit-tested. **Not deployed.** |
 | Member page (`/m/#token`) | **Not built** (Phase 3). Invite links point at it, so they lead nowhere yet. |
-| Draw, Shuffle again, Undo, Show matches, Send the names, do-not-pair screen, delivery and "opened" tracking in the UI | **Not built** (Phase 4). The database functions `start_draw`, `reshuffle` and `undo_draw` exist and are tested. There is no button for them yet. |
+| Draw, Shuffle again, Undo, Show matches, Send the names, do-not-pair screen, delivery and "opened" tracking in the UI | Built in `circle.html` / `js/circle.js` (Phase 4, 4b), along with **Re-shuffle and text everyone** after the names are sent (see "Re-shuffle after the names are sent"). Not yet tried against the live project. |
 | Publishable key in `js/supabaseClient.js` | Still the placeholder `PASTE_PUBLISHABLE_KEY_HERE`. The Elf pages show a "Setup needed" notice until Joe pastes it. |
 | Supabase Auth redirect URLs | Not set. Magic links won't work until they are. |
 | Site published | No. |
@@ -112,8 +112,9 @@ All in `supabase/migrations/`, applied in order:
 5. `..120400_elf_rpcs.sql`: `start_draw`, `reshuffle`, `undo_draw`
 6. `..120500_erase_old_phones.sql`: `erase_old_phones()` and its daily cron job
 7. `..120600_texting_budget.sql`: `texts.body`, `private.text_budget`, `text_budget_cap()`
+8. `20261108120000_claim_reshuffle.sql`: `texts.kind` gains `'reshuffle'`, `private.make_matches(circle, ban_current)`, `public.claim_reshuffle(...)`. **Written and tested; apply it with `apply_migration` or `supabase db push` before deploying the new `send-texts`.**
 
-(File names are abbreviated; each starts `20261018`.)
+(File names are abbreviated; 1-7 each start `20261018`.)
 
 **How they were applied, and a gotcha.** Migrations 1-3 were applied with the Supabase MCP `apply_migration`. Migrations 4-7 were pasted into the SQL Editor by Joe, so Supabase's migration history table lists only 1-3. The database matches the files, but the history doesn't say so. Don't re-run 4-7. For future migrations use `apply_migration` (MCP) or the Supabase CLI (`supabase db push`) so the history stays honest. Optionally, record 4-7 in `supabase_migrations.schema_migrations` by hand to close the gap.
 
@@ -140,15 +141,31 @@ The pgTAP runner opens a transaction itself and always rolls it back, so running
 
 The Edge Function `supabase/functions/send-texts/` is the only thing that sends texts. Provider: [Textbelt](https://textbelt.com) (pay per text, no monthly fee). The provider call is one small function (`provider.ts`), so swapping providers later touches nothing else.
 
-Request: `POST /functions/v1/send-texts` with the Elf's JWT and `{ circle_id, kind: 'invite' | 'reveal', member_id? }`. Response: `{ sent, failed, skipped, dry_run, results }`. Checks run in this order: sign-in and ownership, circle status, lifetime cap (the whole batch must fit), links gate, per-member rate limit, then send. Refusals use these messages: `circle not found`, `text budget used up`, `links not approved yet`, `too many texts, try again in an hour`, `names have not been drawn yet`.
+Request: `POST /functions/v1/send-texts` with the Elf's JWT and `{ circle_id, kind: 'invite' | 'reveal' | 'reshuffle', member_id? }`. Response: `{ sent, failed, skipped, dry_run, results }`. Checks run in this order: sign-in and ownership, circle status, lifetime cap (the whole batch must fit), links gate, per-member rate limit, then send. Refusals use these messages: `circle not found`, `text budget used up`, `links not approved yet`, `too many texts, try again in an hour`, `names have not been drawn yet`, `names have not been sent yet` (a re-shuffle before `sent`).
 
 Who gets texted:
 
 - **Send invites** (whole circle) texts only kids with no real invite yet, and skips kids with no phone number. Dry-run rows don't count as "invited".
-- **Re-send** (one kid) sends an invite before the circle is `sent`, a reveal after. Limit: 3 per kid per hour (the limit also applies in dry run).
-- **Send the names** (reveal for the whole circle) is only allowed from `drawn` and locks the circle to `sent` before the first text goes out. This UI is Phase 4.
+- **Re-send** (one kid) sends an invite before the circle is `sent`, a "you drew" text with the current match after (also after a re-shuffle). Limit: 3 per kid per hour (the limit also applies in dry run).
+- **Send the names** (reveal for the whole circle) is only allowed from `drawn` and locks the circle to `sent` before the first text goes out. Once `sent`, the whole-circle reveal is refused (`names have already been sent`). Changing a sent draw is the re-shuffle below.
+- **Re-shuffle and text everyone** (`kind: 'reshuffle'`) is only allowed from `sent`. It is whole-circle only; a `member_id` is `bad request`.
 
 Message format: at most 160 characters, plain GSM-7 characters only, no emoji, so one text costs one credit. The link is never shortened. Example: `Secret Santa! Maya, you drew Ava! $20, Dec 19. Their list: <link>`.
+
+### Re-shuffle after the names are sent
+
+The circle stays `sent`, so kids always have a match. The plain `reshuffle` RPC is still refused once `sent` (`names have already been sent`); a sent draw can only change together with its texts.
+
+- **Entry point.** The Elf page calls `send-texts` with `kind: 'reshuffle'`. The function checks the JWT, ownership and `sent`, then calls `public.claim_reshuffle(p_circle_id, p_member_ids, p_dry_run)`. That function is granted to `service_role` only, so an Elf can't change a sent draw from the browser.
+- **One transaction.** `claim_reshuffle` locks the circle row, then claims credits (skipped in dry run), makes the new draw with `private.make_matches(circle, true)`, and inserts a `pending` `texts` row (`kind = 'reshuffle'`) per kid. An impossible draw rolls the credit claim back too, so a refusal costs nothing.
+- **Ban on current matches, one-way.** With `ban_current`, a giver can't draw their current receiver: if Sam has Alex, Sam can't draw Alex, but Alex may draw Sam. Only the matches being replaced are banned, not older ones. Self-draws and do-not-pair rules still apply. If no valid draw exists: `Can't make a draw with these do-not-pair rules. Try removing one.`, nothing changes.
+- **All or nothing.** Unlike invites and reveals, nobody is skipped for the rate limit. If any kid being texted already has 3 `texts` rows in the last hour (every row counts: dry run, failed, pending), the whole request is refused with `too many texts, try again in an hour`. If the batch doesn't fit the credit cap, it is refused with `text budget used up`. Either way no match and no text changes. In practice, a circle can be re-shuffled about twice in its first hour, since the invite or reveal already used some of each kid's 3. Cost: 1 credit per kid with a number.
+- **No phone.** A kid with no number is still re-matched. They are returned as skipped (`no phone number`) and the Elf uses Copy link.
+- **Messages** are built after the claim, from the new matches (`reshuffleText` in `_shared/messages.js`): `Secret Santa! Names were reshuffled. {name}, you now drew {receiver}! ...`. If the new matches can't be read, nobody is texted and the rows end `failed`.
+- **If a text fails** after the draw has changed, the new draw stands. That kid has the new match on their link already; the Elf uses Re-send (the normal "you drew" text) or Copy link.
+- **Same link.** `member_view` reads `matches` only, so a kid's existing link shows the new match. New `matches` rows start with `opened_at` empty, so "Opened" tracking starts over.
+- **UI.** `#reshuffle-btn` in `circle.html`, shown when the circle is `sent`. `js/circle.js` runs two separate dialog steps; only the second one calls the function, and it states how many kids will be texted.
+- **Tests.** `tests/sql/63_claim_reshuffle.sql` (pgTAP), `supabase/functions/send-texts/reshuffle_test.ts` (Deno), `tests/e2e/draw.spec.js`.
 
 ### Hard limits (Joe's orders)
 

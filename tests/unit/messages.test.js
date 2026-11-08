@@ -1,4 +1,4 @@
-// MSG-01..11: the text-message builder.
+// MSG-01..17: the text-message builder.
 // Spec: "Texting details (Phase 2 contract) -> Message format", "Texting"
 // ("Shortened links ... are always blocked, so we send the full link").
 //
@@ -236,5 +236,74 @@ describe('MSG-09 / 10 / 11 shortening', () => {
       expect(fitsOneSegment(t), t).toBe(true)
       expect(t.endsWith(' ' + LINK)).toBe(true)
     }
+  })
+})
+
+// Spec: "Re-shuffle after the names are sent", the kind: 'reshuffle' bullet under
+// "Texting", and "Message format".
+describe('MSG-13..17 the re-shuffle text', () => {
+  const reshuffle = (name, receiver, { budget = null, swapDate = null, link = LINK } = {}) =>
+    m.reshuffleText({ name, receiver, budget, swapDate, link })
+  const HEAD = 'Secret Santa! Names were reshuffled. '
+  const RESHUFFLE = /^Secret Santa! Names were reshuffled\. (.+?), you now drew (.+?)! (?:(.*)\. )?Their list: (\S+)$/
+  const junk = /null|undefined|NaN|Invalid/
+
+  it('MSG-13 exactly the spec wording', () => {
+    expect(reshuffle('Maya', 'Ava', { budget: 20, swapDate: '2026-12-19' }))
+      .toBe(`Secret Santa! Names were reshuffled. Maya, you now drew Ava! $20, Dec 19. Their list: ${LINK}`)
+  })
+
+  it('MSG-14 budget only, date only, neither: only what is set appears', () => {
+    expect(reshuffle('Maya', 'Ava', { budget: 20 })).toBe(`${HEAD}Maya, you now drew Ava! $20. Their list: ${LINK}`)
+    expect(reshuffle('Maya', 'Ava', { swapDate: '2026-12-19' })).toBe(`${HEAD}Maya, you now drew Ava! Dec 19. Their list: ${LINK}`)
+    const neither = reshuffle('Maya', 'Ava')
+    expect(neither).toBe(`${HEAD}Maya, you now drew Ava! Their list: ${LINK}`)
+    expect(neither).not.toContain('!.')
+    expect(neither).not.toContain('  ')
+    expect(neither).not.toMatch(junk)
+  })
+  it('MSG-14 a budget of 0 is set, so it shows $0', () => {
+    expect(reshuffle('Maya', 'Ava', { budget: 0 })).toContain('$0')
+  })
+
+  it('MSG-15 every text is GSM-7, at most 160 septets, and ends with the whole link', () => {
+    const names = ['Al', 'Maya', 'Zoë', 'José', 'O’Brien', 'Ava 🎅', '👨‍👩‍👧 Kai', 'Ana [the] {great}', 'Lu€y^', LONG_KID, 'Mia — “Mimi”']
+    let count = 0
+    for (const n of names) {
+      for (const r of names) {
+        for (const budget of [null, 0, 20, 99999]) {
+          for (const swapDate of [null, '2026-12-19', '2027-01-01']) {
+            const t = reshuffle(n, r, { budget, swapDate })
+            count++
+            expect(isGsm7(t), `${n} / ${r}: non-GSM-7 ${JSON.stringify(nonGsm7(t))}`).toBe(true)
+            expect(septets(t), `${n} / ${r}: ${t}`).toBeLessThanOrEqual(160)
+            expect(t.endsWith(' ' + LINK), `${n} / ${r}`).toBe(true)
+          }
+        }
+      }
+    }
+    expect(count).toBeGreaterThan(400)
+  })
+
+  it('MSG-16 long names are shortened with "...", and the link stays whole and last', () => {
+    const other = 'Maximiliana-Josephine Featherstonehaugh'
+    const t = reshuffle(LONG_KID, other, { budget: 99999, swapDate: '2026-12-19' })
+    expect(fitsOneSegment(t), t).toBe(true)
+    const p = t.match(RESHUFFLE)
+    expect(p, t).not.toBeNull()
+    expect(p[4]).toBe(LINK)
+    expect(t).toContain('...')
+    for (const [part, original] of [[p[1], LONG_KID], [p[2], other]]) {
+      if (part === original) continue
+      expect(part.endsWith('...'), part).toBe(true)
+      expect(part.length).toBeGreaterThan(3)
+      expect(original.startsWith(part.slice(0, -3)), part).toBe(true)
+    }
+  })
+
+  it('MSG-17 an emoji-only name still gives one valid segment with the whole link', () => {
+    const t = reshuffle('🎅', '⭐', { budget: 20, swapDate: '2026-12-19' })
+    expect(fitsOneSegment(t), t).toBe(true)
+    expect(t.endsWith(' ' + LINK)).toBe(true)
   })
 })

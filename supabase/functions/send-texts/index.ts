@@ -100,6 +100,13 @@ Deno.serve(async (req: Request) => {
         if (error || !data || typeof data !== 'object') throw new Error('could not claim texts')
         return data as ClaimResult
       },
+      async claimReshuffle (a) {
+        const { data, error } = await svc().rpc('claim_reshuffle', {
+          p_circle_id: a.circle_id, p_member_ids: a.member_ids, p_dry_run: a.dry_run
+        })
+        if (error || !data || typeof data !== 'object') throw new Error('could not claim the re-shuffle')
+        return data as ClaimResult
+      },
       async finishText (textId, patch) {
         // pending -> sent / failed, exactly once per row.
         const { data, error } = await svc().from('texts').update(patch)

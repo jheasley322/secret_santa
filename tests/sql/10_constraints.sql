@@ -189,7 +189,7 @@ select is(pg_temp.outcome($$insert into public.texts (member_id, kind, status, c
           'accepted', 'CON-19 an invite/sent text row is accepted');
 select is(pg_temp.outcome($$insert into public.texts (member_id, kind, status, created_at)
                             values (pg_temp.id('Maya'), 'reminder', 'sent', now())$$),
-          'rejected', 'CON-19 a text kind other than invite/reveal is rejected');
+          'rejected', 'CON-19 a text kind other than invite/reveal/reshuffle is rejected');
 select is(pg_temp.outcome($$insert into public.texts (member_id, kind, status, created_at)
                             values (pg_temp.id('Maya'), 'reveal', 'delivered', now())$$),
           'rejected', 'CON-19 a text status other than sent/failed is rejected');

@@ -13,6 +13,9 @@
 //     any row is written; a one-member reveal needs `sent`.
 //   * `sendStub` lets a test make the stub report chosen members as `failed`
 //     or `skipped` (Phase 4, per-member results). Defaults: everyone sent.
+//   * Re-shuffle (kind: 'reshuffle') writes NO rows and changes NO matches: it
+//     only answers the page. `sendStub.refuse` makes the next call answer 409
+//     with that message.
 
 import { test as base, expect } from '@playwright/test'
 import { inviteText, memberLink, revealText } from '../../../supabase/functions/_shared/messages.js'
@@ -26,6 +29,18 @@ async function stubSendTexts (body, opts = {}) {
   return withDb(async db => {
     const { rows: [circle] } = await db.query('select * from public.circles where id = $1', [body.circle_id])
     if (!circle) return { status: 404, json: { error: 'circle not found' } }
+    if (body.kind === 'reshuffle') {
+      if (opts.refuse) return { status: 409, json: { error: opts.refuse } }
+      if (circle.status !== 'sent') return { status: 409, json: { error: 'names have not been sent yet' } }
+      const { rows: kids } = await db.query('select id, phone from public.members where circle_id = $1 order by first_name', [circle.id])
+      const results = kids.map(k => {
+        if (!k.phone) return { member_id: k.id, status: 'skipped', error: 'no phone number' }
+        if (skip.has(k.id)) return { member_id: k.id, status: 'skipped', error: skip.get(k.id) }
+        return fail.has(k.id) ? { member_id: k.id, status: 'failed', error: 'carrier rejected' } : { member_id: k.id, status: 'sent' }
+      })
+      const tally = s => results.filter(r => r.status === s).length
+      return { status: 200, json: { sent: tally('sent'), failed: tally('failed'), skipped: tally('skipped'), dry_run: true, results } }
+    }
     if (body.kind === 'reveal') {
       if (circle.status === 'open') return { status: 409, json: { error: 'names have not been drawn yet' } }
       if (!body.member_id && circle.status === 'sent') return { status: 409, json: { error: 'names have already been sent' } }
@@ -60,8 +75,8 @@ async function stubSendTexts (body, opts = {}) {
 
 export const test = base.extend({
   sendCalls: async ({}, use) => { await use([]) },
-  // Mutable per test: sendStub.fail.add(memberId), sendStub.skip.set(memberId, reason).
-  sendStub: async ({}, use) => { await use({ fail: new Set(), skip: new Map() }) },
+  // Mutable per test: sendStub.fail.add(memberId), sendStub.skip.set(memberId, reason), sendStub.refuse = message.
+  sendStub: async ({}, use) => { await use({ fail: new Set(), skip: new Map(), refuse: null }) },
   page: async ({ page, sendCalls, sendStub }, use) => {
     await page.route(/textbelt\.com/i, route => route.abort())
     await page.route('**/functions/v1/send-texts', async route => {

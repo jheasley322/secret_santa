@@ -84,6 +84,20 @@ export class FakeDb {
   poisoned = false
   /** Set false to simulate another request having already locked the circle. */
   lockTakes = true
+  /** claim_reshuffle: the new draw as [giver label, receiver label] pairs. Null = the inverse of the current draw. */
+  nextDraw: [string, string][] | null = null
+  /** claim_reshuffle: true = no valid new draw exists. */
+  drawImpossible = false
+  /** claim_reshuffle: the circle stops being `sent` between the pre-check and the claim (a race). */
+  claimSeesNotSent = false
+  /** Set true to make every getMatches() fail: a re-shuffle must not need it. */
+  failMatches = false
+  /** claim_texts: the matches become these during the claim, as if a re-shuffle had just landed. */
+  drawDuringClaim: [string, string][] | null = null
+  /** claim_reshuffle: the result throws when read, an unexpected failure after the claim. */
+  claimResultThrows = false
+  /** claim_reshuffle: the first text names a receiver nobody knows. */
+  claimReceiverUnknown = false
   private seq = 0
 
   private touch () {
@@ -101,6 +115,7 @@ export class FakeDb {
   }
   async getMatches (cid: string) {
     this.touch()
+    if (this.failMatches) throw new Error('could not read matches')
     return this.matches.filter(m => m.circle_id === cid).map(m => ({ giver_id: m.giver_id, receiver_id: m.receiver_id }))
   }
   async getTexts () {
@@ -157,6 +172,15 @@ export class FakeDb {
     const circle = this.circles.get(a.circle_id)
     const wholeReveal = a.kind === 'reveal' && !a.resend
     if (a.kind === 'invite' && circle?.status === 'sent') return { ok: false, error: 'names have already been sent' }
+    if (a.kind === 'reveal' && a.resend && this.livePending(a.circle_id).some(t => t.kind === 'reshuffle')) {
+      return { ok: false, error: 'a send is already in progress' }
+    }
+    if (this.drawDuringClaim) {
+      this.matches = [
+        ...this.matches.filter(x => x.circle_id !== a.circle_id),
+        ...this.drawDuringClaim.map(([g, r]) => ({ circle_id: a.circle_id, giver_id: memberId(g), receiver_id: memberId(r) }))
+      ]
+    }
     if (wholeReveal && (!this.lockTakes || circle?.status !== 'drawn')) return { ok: false, error: 'names have already been sent' }
     const hourAgo = Date.now() - 60 * 60_000
     const skipped: { member_id: string; reason: string }[] = []
@@ -189,6 +213,76 @@ export class FakeDb {
       return { member_id, text_id: row.id }
     })
     return { ok: true, texts, skipped }
+  }
+
+  /**
+   * public.claim_reshuffle (spec "Re-shuffle after the names are sent"): under
+   * the circle lock, only from sent; all or nothing on the cap and the 3-per-hour
+   * limit for kids being texted; the new draw and the pending rows together.
+   * A kid with no phone is re-matched and skipped.
+   */
+  async claimReshuffle (a: { circle_id: string; member_ids: string[]; dry_run: boolean }) {
+    this.touch()
+    if (this.raceUsed) { this.used += this.raceUsed; this.raceUsed = 0 }
+    const circle = this.circles.get(a.circle_id)
+    if (!circle) return { ok: false, error: 'circle not found' }
+    if (circle.status !== 'sent' || this.claimSeesNotSent) return { ok: false, error: 'names have not been sent yet' }
+    const everyone = this.members.filter(m => m.circle_id === a.circle_id).map(m => m.id).sort()
+    if (JSON.stringify([...(a.member_ids ?? [])].sort()) !== JSON.stringify(everyone)) return { ok: false, error: 'bad request' }
+    if (this.livePending(a.circle_id).length > 0) return { ok: false, error: 'a send is already in progress' }
+    if (!this.members.some(m => m.circle_id === a.circle_id && m.phone)) return { ok: false, error: 'nobody can be texted' }
+    if (this.drawImpossible) return { ok: false, error: "Can't make a draw with these do-not-pair rules. Try removing one." }
+    const hourAgo = Date.now() - 60 * 60_000
+    const skipped: { member_id: string; reason: string }[] = []
+    const go: string[] = []
+    for (const id of a.member_ids ?? []) {
+      const m = this.members.find(x => x.id === id && x.circle_id === a.circle_id)
+      if (!m) continue
+      if (!m.phone) { skipped.push({ member_id: id, reason: 'no phone number' }); continue }
+      if (this.texts.filter(t => t.member_id === id && Date.parse(t.created_at) > hourAgo).length >= 3) {
+        return { ok: false, error: 'too many texts, try again in an hour' }
+      }
+      go.push(id)
+    }
+    if (!a.dry_run && go.length > 0) {
+      if (this.used + go.length > this.cap || (this.lastQuota !== null && this.lastQuota - go.length < 5)) {
+        return { ok: false, error: 'text budget used up' }
+      }
+      this.used += go.length
+      if (this.lastQuota !== null) this.lastQuota -= go.length
+    }
+    const others = this.matches.filter(x => x.circle_id !== a.circle_id)
+    const mine = this.matches.filter(x => x.circle_id === a.circle_id)
+    const next = this.nextDraw
+      ? this.nextDraw.map(([g, r]) => ({ circle_id: a.circle_id, giver_id: memberId(g), receiver_id: memberId(r) }))
+      : mine.map(x => ({ circle_id: a.circle_id, giver_id: x.receiver_id, receiver_id: x.giver_id }))
+    this.matches = [...others, ...next]
+    const texts = go.map((member_id, i) => {
+      const row: TextRow = {
+        id: crypto.randomUUID(), member_id, kind: 'reshuffle', status: 'pending', provider_id: null, error: null,
+        dry_run: a.dry_run, quota_remaining: null, body: null,
+        created_at: new Date(Date.now() + this.seq++).toISOString()
+      }
+      this.texts.push(row)
+      this.inserted.push(row)
+      const receiver_id = this.claimReceiverUnknown && i === 0
+        ? '99999999-9999-4999-8999-999999999999'
+        : next.find(x => x.giver_id === member_id)?.receiver_id
+      return { member_id, text_id: row.id, receiver_id }
+    })
+    const result = { ok: true, texts, skipped }
+    if (this.claimResultThrows) {
+      Object.defineProperty(result, 'texts', { get () { throw new Error('unexpected') } })
+      Object.defineProperty(result, 'skipped', { get () { throw new Error('unexpected') } })
+    }
+    return result
+  }
+
+  /** Pending rows in this circle that the 10-minute sweep has not caught. */
+  private livePending (circleId: string) {
+    const ids = new Set(this.members.filter(m => m.circle_id === circleId).map(m => m.id))
+    const cutoff = Date.now() - 10 * 60_000
+    return this.texts.filter(t => ids.has(t.member_id) && t.status === 'pending' && Date.parse(t.created_at) >= cutoff)
   }
 
   /** pending -> sent / failed, after the provider call (spec S3). */

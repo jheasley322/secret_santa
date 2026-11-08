@@ -72,7 +72,19 @@ Members never create Supabase accounts. Their link is their login.
 
 ### Reshuffle (Elf)
 - **Shuffle again** throws away the current draw and makes a new one.
-- **Only allowed until the Elf taps Send the names.** After that the button is disabled with the note "Names have already been sent."
+- Free and silent until the Elf taps Send the names.
+
+### Re-shuffle after the names are sent (Elf; Joe, 2026-11-08)
+- Once the circle is `sent`, the Elf gets a **Re-shuffle and text everyone** button.
+- **Double confirm:** two separate confirmation steps. The first explains what happens. The second states how many kids will be texted and is the one that acts. Cancelling at either step changes nothing.
+- It makes a new draw and texts each kid their new name in **one text** (1 credit per kid). The circle stays `sent`, so kids always have a match, and their same link shows the new one. "Opened" tracking starts over.
+- **Everyone's current match is banned** in the new draw, one-way: if Sam has Alex, Sam can't draw Alex again, but Alex may draw Sam. Only the current draw is banned, not older ones. All the normal draw rules still apply.
+- If no valid new draw exists, it fails with the usual `Can't make a draw with these do-not-pair rules. Try removing one.`, changes nothing and sends nothing.
+- **All or nothing.** It is refused, with nothing changed and nothing sent, if the texts would not fit the credit cap or if any kid being texted has reached the 3-per-hour limit (`too many texts, try again in an hour`). A kid must never be left holding an old name because they were skipped.
+- A kid with no phone number is still re-matched. They are skipped for the text and reported, and the Elf uses Copy link. If **no** kid in the circle has a phone number, it is refused with `nobody can be texted`, because a sent draw must never change silently.
+- **One at a time.** It is refused with `a send is already in progress`, changing nothing, while any text for the circle is still `pending`. A Re-send is refused the same way during a re-shuffle, so nobody's last text can name an old match.
+- **Honest failures.** If something fails after the new draw is made, the Elf is told the new draw exists, some kids may not have been told, and to use Re-send or Copy link rather than re-shuffling again.
+- The plain `reshuffle` RPC stays refused once `sent`, so a sent draw can never change without the texts.
 
 ### Peek (Elf)
 - The full who-drew-whom list is hidden behind a **Show matches** toggle, so it isn't on screen by accident.
@@ -93,7 +105,7 @@ Members never create Supabase accounts. Their link is their login.
 ### Circle status
 `open` → `drawn` → `sent`.
 - `drawn`: matches exist, and only the Elf can see them. **Shuffle again** is allowed. Members can't be added or removed, and do-not-pair rules can't be changed. **Undo draw** goes back to `open`.
-- `sent`: the reveal texts have gone out. The draw is final.
+- `sent`: the reveal texts have gone out. The draw changes only through **Re-shuffle and text everyone**.
 - Members see their match only once the circle is `sent`.
 
 ---
@@ -145,7 +157,7 @@ matches
 texts                                     -- one row per text sent; drives the delivery column
   id            uuid pk
   member_id     uuid → members
-  kind          text  'invite' | 'reveal'
+  kind          text  'invite' | 'reveal' | 'reshuffle'
   status        text  'sent' | 'failed'
   provider_id   text (nullable)          -- the texting provider's message id
   error         text (nullable)
@@ -252,6 +264,7 @@ The app sends every text itself, through one Supabase **Edge Function**, `send-t
 - **The API key** is stored as a Supabase Edge Function secret. It never appears in the browser or the repo.
 - **Inputs:** `{ circle_id, kind: 'invite' | 'reveal', member_id? }`. The function checks that the caller is the circle's Elf. It reads names, numbers and matches with the service role, sends the texts, and logs a row in `texts` for each one.
 - `kind: 'reveal'` for the whole circle is allowed only from `drawn` and moves the circle to `sent`.
+- `kind: 'reshuffle'` is whole-circle only (a `member_id` is `bad request`) and allowed only from `sent`; otherwise `names have not been sent yet`. The new draw happens inside `claim_reshuffle(p_circle_id, p_member_ids, p_dry_run)`, an internal service-role-only function, in one transaction under the circle lock with the credit claim and the all-or-nothing rate-limit check. The messages are built from the new matches after the claim. Message: `Secret Santa! Names were reshuffled. {name}, you now drew {receiver}!{ budget/date if set.} Their list: {link}`, under the same format rules as every other text. Re-send on a member after this uses the normal "you drew" text with the new match.
 - Rate limit: at most 3 texts per member per hour.
 - **Test mode:** with `TEXTS_DRY_RUN=true`, nothing is sent. The function logs the message text to `texts` instead, for local development and tests.
 
